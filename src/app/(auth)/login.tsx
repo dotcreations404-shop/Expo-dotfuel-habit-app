@@ -1,13 +1,23 @@
 /**
- * Login screen — Google OAuth, Apple Sign In, Email OTP.
- * Matches the webapp's login screen design.
+ * Login screen — matches webapp's login screen exactly.
+ * Pulsing lime dot + Google OAuth, Apple Sign In (iOS), Email OTP.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable, TextInput, Alert, ScrollView, KeyboardAvoidingView } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/contexts/auth-context';
-import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
+import { DotFuelColors, Spacing } from '@/constants/colors';
 
 export default function LoginScreen() {
   const { signInWithGoogle, signInWithApple, sendOtp, verifyOtp } = useAuth();
@@ -16,6 +26,23 @@ export default function LoginScreen() {
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Dot pulse — matches webapp CSS: dot-pulse 2.5s ease-in-out infinite
+  const dotScale = useSharedValue(1);
+  useEffect(() => {
+    dotScale.value = withRepeat(
+      withSequence(
+        withTiming(1.05, { duration: 1250, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1250, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      true,
+    );
+  }, []);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: dotScale.value }],
+  }));
 
   const handleSendOtp = async () => {
     if (!email.includes('@')) {
@@ -54,12 +81,14 @@ export default function LoginScreen() {
         contentContainerStyle={{ flexGrow: 1, paddingTop: 48 }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
+        {/* Header with pulsing dot — matches webapp .login-top */}
         <Animated.View entering={FadeInDown.duration(400)} style={{ alignItems: 'center', paddingHorizontal: 28, paddingBottom: 28 }}>
-          <View style={{
+          {/* Pulsing login dot — 60x60 like webapp */}
+          <Animated.View style={[dotStyle, {
             width: 60, height: 60, borderRadius: 30,
             backgroundColor: DotFuelColors.lime, marginBottom: 20,
-          }} />
+          }]} />
+
           <Text style={{
             fontFamily: 'Inter', fontSize: 36, fontWeight: '900',
             color: DotFuelColors.white, textTransform: 'uppercase',
@@ -71,15 +100,15 @@ export default function LoginScreen() {
             fontSize: 13, color: DotFuelColors.muted, fontWeight: '500',
             lineHeight: 20, textAlign: 'center',
           }}>
-            Sign in to keep tracking your fuel
+            Sign in to track your fuel{'\n'}and own your dot today.
           </Text>
         </Animated.View>
 
-        {/* Auth Methods */}
+        {/* Auth Methods — matches webapp .login-methods */}
         <Animated.View entering={FadeInDown.delay(150).duration(400)} style={{
           paddingHorizontal: Spacing['2xl'], gap: 10,
         }}>
-          {/* Google */}
+          {/* Google — with colored SVG icon in webapp, we use emoji here */}
           <Pressable
             onPress={signInWithGoogle}
             style={({ pressed }) => ({
@@ -119,7 +148,17 @@ export default function LoginScreen() {
             </Pressable>
           )}
 
-          {/* Email OTP */}
+          {/* Divider — matches webapp .divider */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            marginVertical: 2,
+          }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
+            <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600' }}>OR</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
+          </View>
+
+          {/* Email */}
           <Pressable
             onPress={() => setShowOtp(true)}
             style={({ pressed }) => ({
@@ -139,27 +178,23 @@ export default function LoginScreen() {
           </Pressable>
         </Animated.View>
 
-        {/* Divider */}
-        {showOtp && (
-          <Animated.View entering={FadeIn.duration(200)} style={{
-            flexDirection: 'row', alignItems: 'center', gap: 12,
-            marginHorizontal: Spacing['2xl'], marginVertical: Spacing.sm,
-          }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
-            <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600' }}>EMAIL</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.07)' }} />
-          </Animated.View>
-        )}
-
-        {/* OTP Panel */}
+        {/* OTP Panel — matches webapp .otp-panel */}
         {showOtp && (
           <Animated.View entering={FadeInUp.duration(300)} style={{
-            paddingHorizontal: Spacing['2xl'], gap: Spacing.md,
+            paddingHorizontal: Spacing['2xl'], gap: Spacing.md, marginTop: 12,
           }}>
+            {/* Email label */}
+            <Text style={{
+              fontSize: 11, color: DotFuelColors.muted, fontWeight: '700',
+              textTransform: 'uppercase', letterSpacing: 1.5,
+            }}>
+              Email Address
+            </Text>
+
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="your@email.com"
+              placeholder="you@example.com"
               placeholderTextColor={DotFuelColors.muted}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -173,22 +208,32 @@ export default function LoginScreen() {
             />
 
             {!otpSent ? (
-              <Pressable
-                onPress={handleSendOtp}
-                disabled={loading || !email}
-                style={({ pressed }) => ({
-                  backgroundColor: DotFuelColors.lime, borderRadius: 14,
-                  paddingVertical: 14, alignItems: 'center',
-                  opacity: loading || !email ? 0.3 : pressed ? 0.88 : 1,
-                })}
-              >
+              <>
+                <Pressable
+                  onPress={handleSendOtp}
+                  disabled={loading || !email}
+                  style={({ pressed }) => ({
+                    backgroundColor: DotFuelColors.lime, borderRadius: 14,
+                    paddingVertical: 14, alignItems: 'center',
+                    opacity: loading || !email ? 0.3 : pressed ? 0.88 : 1,
+                  })}
+                >
+                  <Text style={{
+                    fontFamily: 'Inter', fontSize: 14, fontWeight: '800',
+                    color: DotFuelColors.black, textTransform: 'uppercase', letterSpacing: 0.5,
+                  }}>
+                    {loading ? 'Sending…' : 'SEND MAGIC LINK →'}
+                  </Text>
+                </Pressable>
+
                 <Text style={{
-                  fontFamily: 'Inter', fontSize: 14, fontWeight: '800',
-                  color: DotFuelColors.black, textTransform: 'uppercase', letterSpacing: 0.5,
+                  fontSize: 11, color: DotFuelColors.muted, fontWeight: '500',
+                  textAlign: 'center', lineHeight: 17,
                 }}>
-                  {loading ? 'Sending…' : 'Send Code'}
+                  We'll email you a magic link to sign in instantly.{'\n'}
+                  Or enter the 6-digit code below if you get one.
                 </Text>
-              </Pressable>
+              </>
             ) : (
               <>
                 <Text style={{ fontSize: 12, color: DotFuelColors.muted, fontWeight: '600' }}>
@@ -222,7 +267,7 @@ export default function LoginScreen() {
                     fontFamily: 'Inter', fontSize: 14, fontWeight: '800',
                     color: DotFuelColors.black, textTransform: 'uppercase', letterSpacing: 0.5,
                   }}>
-                    {loading ? 'Verifying…' : 'Verify'}
+                    {loading ? 'Verifying…' : 'VERIFY →'}
                   </Text>
                 </Pressable>
               </>

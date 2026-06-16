@@ -1,8 +1,8 @@
 /**
- * Splash / Welcome screen — first thing users see.
- * Matches the webapp's splash screen with animated DotFuel branding.
+ * Splash / Welcome screen — matches webapp's splash with animated dot + 4 floating icons.
+ * Emojis: 🥜 💪 ⚡ 🔥 floating around the pulsing lime dot.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, {
@@ -11,17 +11,75 @@ import Animated, {
   withRepeat,
   withTiming,
   withSequence,
+  withDelay,
   Easing,
   FadeIn,
   FadeInDown,
 } from 'react-native-reanimated';
 import { DotFuelColors, Spacing } from '@/constants/colors';
 
+/** The 4 floating emojis that orbit the dot — matches webapp exactly. */
+const FOOD_FLOATS = [
+  { emoji: '🥜', top: -28, left: 8, delay: 0 },
+  { emoji: '💪', top: -14, right: 2, delay: 600 },
+  { emoji: '⚡', bottom: -24, left: 4, delay: 1200 },
+  { emoji: '🔥', bottom: -10, right: 8, delay: 1800 },
+] as const;
+
+function FloatingEmoji({ emoji, delay, ...position }: typeof FOOD_FLOATS[number]) {
+  const translateY = useSharedValue(0);
+  const rotate = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(-10, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true,
+      ),
+    );
+    rotate.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(8, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true,
+      ),
+    );
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: translateY.value },
+      { rotate: `${rotate.value}deg` },
+    ],
+  }));
+
+  const posStyle: any = { position: 'absolute', fontSize: 22 };
+  if ('top' in position) posStyle.top = position.top;
+  if ('bottom' in position) posStyle.bottom = position.bottom;
+  if ('left' in position) posStyle.left = position.left;
+  if ('right' in position) posStyle.right = position.right;
+
+  return (
+    <Animated.Text style={[posStyle, style]}>
+      {emoji}
+    </Animated.Text>
+  );
+}
+
 export default function WelcomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
 
-  // Dot pulse animation
+  // Dot pulse animation — matches CSS: scale(1) → scale(1.05) over 2.5s
   const dotScale = useSharedValue(1);
   useEffect(() => {
     dotScale.value = withRepeat(
@@ -45,47 +103,45 @@ export default function WelcomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: DotFuelColors.black, alignItems: 'center', justifyContent: 'center' }}>
-      {/* Background noise gradients */}
-      <View style={{
-        position: 'absolute', inset: 0, overflow: 'hidden',
-      }}>
+      {/* Background noise gradients — matches webapp splash-noise */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
         <View style={{
           position: 'absolute', width: 400, height: 400, top: '10%', left: '10%',
           borderRadius: 200, opacity: 0.08,
           backgroundColor: DotFuelColors.lime,
-          filter: 'blur(120px)',
         }} />
         <View style={{
           position: 'absolute', width: 500, height: 400, bottom: '10%', right: '10%',
           borderRadius: 250, opacity: 0.07,
           backgroundColor: DotFuelColors.blue,
-          filter: 'blur(150px)',
         }} />
       </View>
 
-      {/* Animated Dot */}
+      {/* Animated Dot with floating emojis */}
       <Animated.View entering={FadeIn.duration(600)} style={{ alignItems: 'center', marginBottom: Spacing['3xl'] }}>
         <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Pulsing ring */}
           <Animated.View style={[dotRingStyle, {
             position: 'absolute',
             width: 152, height: 152, borderRadius: 76,
             borderWidth: 2, borderColor: DotFuelColors.limeMuted,
           }]} />
+
+          {/* Main dot */}
           <Animated.View style={[dotStyle, {
             width: 130, height: 130, borderRadius: 65,
             backgroundColor: DotFuelColors.lime,
             alignItems: 'center', justifyContent: 'center',
           }]}>
-            {/* Floating food emojis */}
-            <Text style={{ position: 'absolute', top: -28, left: 8, fontSize: 22 }}>🥗</Text>
-            <Text style={{ position: 'absolute', top: -14, right: 2, fontSize: 22 }}>🍗</Text>
-            <Text style={{ position: 'absolute', bottom: -24, left: 4, fontSize: 22 }}>🥚</Text>
-            <Text style={{ position: 'absolute', bottom: -10, right: 8, fontSize: 22 }}>🍎</Text>
+            {/* 4 floating food emojis — same as webapp */}
+            {FOOD_FLOATS.map((float) => (
+              <FloatingEmoji key={float.emoji} {...float} />
+            ))}
           </Animated.View>
         </View>
       </Animated.View>
 
-      {/* Wordmark */}
+      {/* Wordmark — D[dot]TFUEL */}
       <Animated.View entering={FadeInDown.delay(200).duration(500)} style={{ alignItems: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{
@@ -111,7 +167,7 @@ export default function WelcomeScreen() {
           fontSize: 13, color: DotFuelColors.muted, textAlign: 'center',
           lineHeight: 21, marginTop: Spacing.sm, maxWidth: 280, fontWeight: '500',
         }}>
-          Track your fuel. Hit your macros.{'\n'}Build the physique you want.
+          Trackable results.{'\n'}Own your dot every single day.
         </Text>
       </Animated.View>
 
@@ -133,7 +189,7 @@ export default function WelcomeScreen() {
             fontFamily: 'Inter', fontSize: 15, fontWeight: '800',
             color: DotFuelColors.black, textTransform: 'uppercase', letterSpacing: 0.5,
           }}>
-            Get Started
+            GET STARTED →
           </Text>
         </Pressable>
 

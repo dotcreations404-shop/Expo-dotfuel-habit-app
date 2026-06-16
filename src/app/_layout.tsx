@@ -57,7 +57,7 @@ function AuthGate() {
       if (needsOnboarding) {
         router.replace('/(auth)/onboarding/0');
       } else {
-        router.replace('/(tabs)');
+        router.replace('/(tabs)/(home)' as any);
       }
     }
   }, [session, loading, needsOnboarding, segments]);

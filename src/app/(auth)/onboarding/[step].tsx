@@ -84,7 +84,7 @@ export default function OnboardingStep() {
     onSuccess: async () => {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await refreshProfile();
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/(home)' as any);
     },
     onError: (err) => {
       Alert.alert('Error', err.message);
