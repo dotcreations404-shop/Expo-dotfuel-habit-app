@@ -1,56 +1,102 @@
-# Welcome to your Expo app 👋
+# DotFuel 🟢
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Your personal nutrition tracker — built for Indian athletes.**
 
-## Get started
+Track calories, hit your macros, stay consistent. Built with Expo SDK 56 for iOS, Android, and Web.
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- 🎯 **Fuel Score** — daily nutrition score (0-100) based on macro targets
+- 📊 **Macro Tracking** — protein, carbs, fat with visual progress bars
+- 💧 **Water Tracking** — quick-add buttons for hydration goals
+- 🔥 **Streak System** — daily logging streaks with 7-day visualization
+- 🤖 **Dot Boy AI** — personal AI trainer powered by Claude (streaming chat)
+- 📸 **Photo AI** — snap a meal photo for instant macro estimation
+- 🔍 **Food Search** — FatSecret database with 1M+ foods
+- 📱 **Barcode Scanner** — scan product barcodes for instant lookup
+- 🎙️ **Voice Logging** — say what you ate (coming soon)
+- 🏆 **Challenges** — community challenges and leaderboards
 
-2. Start the app
+## Tech Stack
 
-   ```bash
-   npx expo start
-   ```
+- **Framework**: [Expo SDK 56](https://expo.dev) + React Native
+- **Router**: [Expo Router](https://docs.expo.dev/router/introduction/) (file-based)
+- **Backend**: [Supabase](https://supabase.com) (auth, database, storage)
+- **AI**: [Anthropic Claude](https://anthropic.com) (food estimation, DotBoy chat)
+- **Food Data**: [FatSecret API](https://platform.fatsecret.com)
+- **TTS**: [ElevenLabs](https://elevenlabs.io)
+- **Animations**: [Reanimated 3](https://docs.swmansion.com/react-native-reanimated/)
+- **Data Fetching**: [TanStack Query](https://tanstack.com/query)
 
-In the output, you'll find options to open the app in a
+## Getting Started
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Prerequisites
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- Node.js 22+
+- [Expo CLI](https://docs.expo.dev/get-started/installation/)
 
-## Get a fresh project
-
-When you're ready, run:
+### Setup
 
 ```bash
-npm run reset-project
+# Clone the repo
+git clone https://github.com/dotcreations404/dotcreations404-shop.git
+cd dotcreations404-shop
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+cp .env.example .env
+# Fill in your API keys in .env
+
+# Start the dev server
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Environment Variables
 
-### Other setup steps
+See [`.env.example`](.env.example) for the required variables:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+| Variable | Description |
+|----------|-------------|
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key (server only) |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key |
+| `FATSECRET_CLIENT_ID` | FatSecret OAuth client ID |
+| `FATSECRET_CLIENT_SECRET` | FatSecret OAuth client secret |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS API key |
 
-## Learn more
+## Project Structure
 
-To learn more about developing your project with Expo, look at the following resources:
+```
+src/
+├── app/
+│   ├── (auth)/           # Auth flow (login, onboarding)
+│   ├── (tabs)/           # Main app tabs
+│   │   ├── (home)/       # Dashboard
+│   │   ├── (log)/        # Food logging
+│   │   ├── (challenges)/ # DotBoy AI + challenges
+│   │   └── (profile)/    # Settings + stats
+│   ├── api/              # API routes (replaces Netlify Functions)
+│   └── _layout.tsx       # Root layout
+├── components/           # Reusable UI components
+├── constants/            # Colors, spacing, typography
+├── contexts/             # Auth context provider
+└── lib/                  # Supabase client, types
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## API Routes
 
-## Join the community
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/ai-estimate` | POST | AI macro estimation from text/photos |
+| `/api/fatsecret` | GET | Food search + barcode lookup |
+| `/api/dotboy` | POST | Streaming AI chat (SSE) |
+| `/api/dotboy-tts` | POST | Text-to-speech |
+| `/api/ocr-label` | POST | Nutrition label OCR |
+| `/api/delete-account` | POST | Full account deletion |
 
-Join our community of developers creating universal apps.
+## Built By
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+**Dot Creations** — dotcreations404@gmail.com
