@@ -1,7 +1,7 @@
 /**
  * Profile screen — user stats, badges, mode selector, settings links.
  */
-import { View, ScrollView, Pressable, Alert } from 'react-native';
+import { View, ScrollView, Pressable, Alert, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -22,10 +22,17 @@ export default function ProfileScreen() {
   const modeInfo = FUEL_MODES[mode] ?? FUEL_MODES.balance;
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: signOut },
-    ]);
+    if (Platform.OS === 'web') {
+      const confirmSignOut = window.confirm('Are you sure you want to sign out?');
+      if (confirmSignOut) {
+        signOut();
+      }
+    } else {
+      Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: signOut },
+      ]);
+    }
   };
 
   const stats = [

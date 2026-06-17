@@ -167,7 +167,7 @@ export default function WelcomeScreen() {
         </View>
 
         <Text style={{
-          fontSize: 13, color: 'rgba(194, 240, 0, 0.45)', textAlign: 'center',
+          fontSize: 13, color: '#828282', textAlign: 'center',
           lineHeight: 21, marginTop: Spacing.sm, maxWidth: 280, fontWeight: '500',
         }}>
           Trackable results.{'\n'}Own your dot every single day.
@@ -200,14 +200,14 @@ export default function WelcomeScreen() {
           onPress={() => router.push('/(auth)/login')}
           style={({ pressed }) => ({
             backgroundColor: 'transparent', borderRadius: 14,
-            borderWidth: 1.5, borderColor: 'rgba(194, 240, 0, 0.25)',
+            borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.15)',
             paddingVertical: 14, alignItems: 'center',
             opacity: pressed ? 0.7 : 1,
           })}
         >
           <Text style={{
             fontFamily: 'Inter', fontSize: 14, fontWeight: '700',
-            color: 'rgba(194, 240, 0, 0.65)',
+            color: '#FFFFFF',
           }}>
             I already have an account
           </Text>
