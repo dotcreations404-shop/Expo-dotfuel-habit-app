@@ -44,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Fetch profile ──────────────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string) => {
+    try {
       const { data, error } = await supabase
         .from('users')
         .select('*')
