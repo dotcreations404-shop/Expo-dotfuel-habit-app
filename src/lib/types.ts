@@ -22,6 +22,7 @@ export interface UserProfile {
   best_streak?: number;
   total_logged_days?: number;
   avatar_url?: string;
+  push_token?: string;
   created_at?: string;
 }
 

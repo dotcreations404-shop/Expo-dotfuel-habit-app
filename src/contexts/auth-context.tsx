@@ -35,6 +35,8 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+import { savePushToken } from '@/lib/notifications';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -42,7 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Fetch profile ──────────────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string) => {
-    try {
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -50,6 +51,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
       if (error) console.warn('Profile fetch error:', error.message);
       setProfile(data ?? null);
+      
+      // Attempt to save push token on login/fetch
+      savePushToken(userId).catch(console.warn);
     } catch (err) {
       console.warn('Profile fetch failed:', err);
     }
