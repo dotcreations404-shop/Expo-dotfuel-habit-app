@@ -1,0 +1,581 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image } from 'react-native';
+import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Stack, useRouter } from 'expo-router';
+import Animated, { FadeInDown, FadeIn, SlideInUp } from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
+import { useAuth } from '@/contexts/auth-context';
+import { supabase } from '@/lib/supabase';
+import type { Vol3Participant, Vol3DailyProgress, Vol3ChatMessage, UserProfile } from '@/lib/types';
+import * as Haptics from 'expo-haptics';
+
+export default function Vol3ChallengeScreen() {
+  const router = useRouter();
+  const { user, profile } = useAuth();
+  const insets = useSafeAreaInsets();
+  
+  const [loading, setLoading] = useState(true);
+  const [participant, setParticipant] = useState<Vol3Participant | null>(null);
+  
+  // Cut List
+  const [cutList, setCutList] = useState(['', '', '']);
+  
+  // Dashboard states
+  const [daysLeft, setDaysLeft] = useState(76);
+  const [progressData, setProgressData] = useState<Record<string, Vol3DailyProgress>>({});
+  const [leaderboard, setLeaderboard] = useState<(UserProfile & { streak_days: number })[]>([]);
+  const [messages, setMessages] = useState<Vol3ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const chatScrollRef = useRef<ScrollView>(null);
+
+  const [tasks, setTasks] = useState({
+    cleanMeals: false,
+    workout: false,
+    read: false,
+    water: false,
+    custom: false,
+  });
+  const [customTaskName, setCustomTaskName] = useState('');
+
+  const completedCount = Object.values(tasks).filter(Boolean).length;
+  const progressPercent = (completedCount / 5) * 100;
+
+  useEffect(() => {
+    // Calculate days to Aug 30, 2026
+    const end = new Date('2026-08-30T00:00:00Z').getTime();
+    const now = new Date().getTime();
+    const diff = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
+    setDaysLeft(diff);
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadInitialData();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (participant) {
+      loadDashboardData();
+      setupChatSubscription();
+    }
+    return () => {
+      supabase.removeAllChannels();
+    };
+  }, [participant]);
+
+  const loadInitialData = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('challenge_vol3_participants')
+        .select('*')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+
+      if (data) {
+        setParticipant(data);
+        if (data.custom_task_title) setCustomTaskName(data.custom_task_title);
+      }
+    } catch (err) {
+      console.log('Error loading participant', err);
+    }
+    setLoading(false);
+  };
+
+  const loadDashboardData = async () => {
+    if (!user || !participant) return;
+
+    try {
+      // Fetch Daily Progress
+      const startDateStr = new Date(participant.joined_at).toISOString().split('T')[0];
+      const endDateStr = '2026-08-30';
+      const { data: progData } = await supabase
+        .from('challenge_vol3_daily_progress')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('log_date', startDateStr)
+        .lte('log_date', endDateStr);
+
+      if (progData) {
+        const pMap: Record<string, Vol3DailyProgress> = {};
+        progData.forEach(p => pMap[p.log_date] = p);
+        setProgressData(pMap);
+
+        // Load today's tasks
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todayRow = pMap[todayStr];
+        if (todayRow) {
+          setTasks({
+            cleanMeals: todayRow.clean_meals,
+            workout: todayRow.workout,
+            read: todayRow.read_page,
+            water: todayRow.water_synced,
+            custom: todayRow.custom_task,
+          });
+        }
+      }
+
+      // Fetch Leaderboard
+      const { data: parts } = await supabase.from('challenge_vol3_participants').select('user_id').eq('status', 'active');
+      if (parts && parts.length > 0) {
+        const ids = parts.map(p => p.user_id);
+        const { data: users } = await supabase.from('users').select('id, name, streak_days').in('id', ids);
+        if (users) {
+          const sorted = users
+            .filter(u => u.name)
+            .map(u => ({ ...u, streak_days: u.streak_days || 0 }))
+            .sort((a, b) => b.streak_days - a.streak_days);
+          setLeaderboard(sorted);
+        }
+      }
+
+      // Fetch Chat Messages
+      const { data: msgs } = await supabase
+        .from('challenge_vol3_chat')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (msgs) {
+        setMessages(msgs.reverse());
+        setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    } catch (err) {
+      console.log('Error loading dashboard data', err);
+    }
+  };
+
+  const setupChatSubscription = () => {
+    supabase
+      .channel('vol3-chat-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'challenge_vol3_chat' }, (payload) => {
+        setMessages(prev => [...prev, payload.new as Vol3ChatMessage]);
+        setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+      })
+      .subscribe();
+  };
+
+  const joinChallenge = async () => {
+    if (!user) return;
+    if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    
+    const cuts = cutList.filter(c => c.trim().length > 0);
+    const newParticipant = {
+      user_id: user.id,
+      cut_list: cuts,
+      revivals_remaining: 2,
+      status: 'active' as const,
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('challenge_vol3_participants')
+        .insert(newParticipant)
+        .select()
+        .single();
+        
+      if (data) {
+        setParticipant(data);
+      }
+    } catch (err) {
+      console.log('Error joining challenge', err);
+    }
+  };
+
+  const toggleTask = async (key: keyof typeof tasks) => {
+    if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const nextVal = !tasks[key];
+    setTasks(prev => ({ ...prev, [key]: nextVal }));
+
+    // Real app would update Supabase `challenge_vol3_daily_progress` here
+  };
+
+  const sendChatMessage = async () => {
+    if (!user || !chatInput.trim()) return;
+    const msgText = chatInput.trim();
+    setChatInput('');
+    
+    try {
+      await supabase.from('challenge_vol3_chat').insert({
+        user_id: user.id,
+        message: msgText,
+        profile_name: profile?.name || user.email?.split('@')[0] || 'Challenger',
+        image_url: profile?.avatar_url || null
+      });
+    } catch (err) {
+      console.log('Error sending msg', err);
+    }
+  };
+
+  const renderDotMatrix = () => {
+    if (!participant) return null;
+    
+    const startStr = new Date(participant.joined_at).toISOString().split('T')[0];
+    const endStr = '2026-08-30';
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const timeline = [];
+    let curr = new Date(start);
+    while (curr <= end) {
+      timeline.push(curr.toISOString().split('T')[0]);
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    return (
+      <View style={{ marginTop: 24 }}>
+        <Text style={{ color: DotFuelColors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>Dot Matrix</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {timeline.map((dateStr, i) => {
+            let color: string = DotFuelColors.surface;
+            let border: string = 'rgba(255,255,255,0.1)';
+            let shadowColor: string = 'transparent';
+            
+            const isToday = dateStr === todayStr;
+            const isFuture = dateStr > todayStr;
+            const row = progressData[dateStr];
+            
+            // Check if it's past and completed from DB, OR if it's today and all local tasks are done
+            const isCompleted = (row && (row.is_calculated_success || row.revival_applied)) || (isToday && completedCount === 5);
+
+            if (isCompleted) {
+              // Completed
+              color = DotFuelColors.lime;
+              border = DotFuelColors.lime;
+              shadowColor = DotFuelColors.lime;
+            } else if (isToday) {
+              // Current uncompleted day (hollow with tinted inner)
+              color = DotFuelColors.limeLight;
+              border = DotFuelColors.lime;
+              shadowColor = DotFuelColors.lime;
+            } else if (isFuture) {
+              // Future
+              color = 'transparent';
+              border = 'rgba(255,255,255,0.1)';
+            } else {
+              // Past uncompleted
+              color = DotFuelColors.red;
+              border = DotFuelColors.red;
+              shadowColor = DotFuelColors.red;
+            }
+
+            return (
+              <Animated.View 
+                key={dateStr}
+                entering={FadeIn.delay(i * 15).duration(300)}
+                style={{
+                  width: 22, height: 22, borderRadius: 11,
+                  backgroundColor: color, borderWidth: 1, borderColor: border,
+                  shadowColor: shadowColor,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: shadowColor !== 'transparent' ? 0.9 : 0,
+                  shadowRadius: 8,
+                  elevation: shadowColor !== 'transparent' ? 6 : 0,
+                }}
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: DotFuelColors.black, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={DotFuelColors.lime} />
+      </View>
+    );
+  }
+
+  if (!participant) {
+    // ONBOARDING VIEW
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }}>
+          <Stack.Screen options={{ title: 'Volume 3', headerShown: false }} />
+          
+          <View style={{ paddingTop: 16, paddingHorizontal: Spacing['2xl'], alignItems: 'center' }}>
+            <Pressable onPress={() => router.back()} style={{ position: 'absolute', top: 16, left: Spacing['2xl'], padding: 8 }}>
+              <Text style={{ color: DotFuelColors.white, fontSize: 24 }}>←</Text>
+            </Pressable>
+            <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>DOT CHALLENGE</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.lime, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>Volume 3</Text>
+          </View>
+
+        <Animated.View entering={FadeInDown.delay(100)} style={{ paddingHorizontal: Spacing['2xl'] }}>
+          {/* Hero Card */}
+          <View style={{
+            marginTop: 20, alignItems: 'center', backgroundColor: DotFuelColors.card,
+            borderWidth: 1, borderColor: 'rgba(194,240,0,0.15)', borderRadius: Radius['2xl'],
+            padding: 28,
+          }}>
+            <Text style={{ fontSize: 52, marginBottom: 14 }}>🔥</Text>
+            <Text style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: '900', color: DotFuelColors.white, marginBottom: 6 }}>Welcome to Vol 3</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, textAlign: 'center', lineHeight: 20 }}>
+              The ultimate test of consistency. Stay clean-eating from now until <Text style={{ color: DotFuelColors.white, fontWeight: 'bold' }}>August 30, 2026</Text>. 
+              Define your Cut List, maintain your streak, and push through with <Text style={{ color: DotFuelColors.lime, fontWeight: 'bold' }}>2 emergency Streak Revivals</Text>.
+            </Text>
+          </View>
+
+          {/* Rules */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+            {[
+              { emoji: '📅', title: '76 Days', desc: 'Duration' },
+              { emoji: '🎟️', title: '2 Revivals', desc: 'Streak Saves' },
+              { emoji: '🏆', title: 'Live Board', desc: 'Compete Live' }
+            ].map((rule, i) => (
+              <View key={i} style={{ flex: 1, backgroundColor: DotFuelColors.card, borderRadius: 16, padding: 14, alignItems: 'center' }}>
+                <Text style={{ fontSize: 24, marginBottom: 6 }}>{rule.emoji}</Text>
+                <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '800', color: DotFuelColors.white }}>{rule.title}</Text>
+                <Text style={{ fontSize: 10, color: DotFuelColors.muted, fontWeight: '600' }}>{rule.desc}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Cut List */}
+          <View style={{ marginTop: 14, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], padding: 20 }}>
+            <Text style={{ color: '#ff6b6b', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>THE CUT LIST 🚫</Text>
+            <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginBottom: 18, lineHeight: 18 }}>
+              Identify up to 3 food addictions or guilty habits you want to eliminate during this challenge. <Text style={{ opacity: 0.5 }}>(Optional)</Text>
+            </Text>
+            {[0, 1, 2].map((i) => (
+              <TextInput
+                key={i}
+                value={cutList[i]}
+                onChangeText={(val) => {
+                  const newList = [...cutList];
+                  newList[i] = val;
+                  setCutList(newList);
+                }}
+                placeholder={`e.g. ${['Sugary sodas 🥤', 'Late night snacking 🍕', 'Fast food 🍔'][i]}`}
+                placeholderTextColor={DotFuelColors.muted}
+                style={{
+                  backgroundColor: DotFuelColors.surface, borderRadius: 12, padding: 14,
+                  color: DotFuelColors.white, fontFamily: 'Inter', fontSize: 14, marginBottom: 10,
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
+                }}
+              />
+            ))}
+          </View>
+
+          <Button
+            title="ACCEPT THE CHALLENGE →"
+            onPress={joinChallenge}
+            style={{ marginTop: 20 }}
+          />
+        </Animated.View>
+      </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // DASHBOARD VIEW
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+        <Stack.Screen options={{ title: 'Volume 3', headerShown: false }} />
+        
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }}>
+          <View style={{ paddingTop: 16, paddingHorizontal: Spacing['2xl'], alignItems: 'center' }}>
+            <Pressable onPress={() => router.back()} style={{ position: 'absolute', top: 16, left: Spacing['2xl'], padding: 8 }}>
+              <Text style={{ color: DotFuelColors.white, fontSize: 24 }}>←</Text>
+            </Pressable>
+          <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>DOT CHALLENGE</Text>
+          <Text style={{ fontSize: 13, color: DotFuelColors.lime, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>Volume 3</Text>
+        </View>
+
+        <Animated.View entering={FadeIn.duration(400)} style={{ paddingHorizontal: Spacing['2xl'] }}>
+          {/* Time Remaining */}
+          <View style={{
+            marginTop: 20, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
+            padding: 20, borderWidth: 1, borderColor: 'rgba(194,240,0,0.1)'
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <View>
+                <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>Time Remaining</Text>
+                <Text style={{ fontFamily: 'Inter', fontSize: 28, fontWeight: '900', color: DotFuelColors.white, letterSpacing: -1 }}>{daysLeft} Days</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600' }}>Ends 30 Aug 2026</Text>
+            </View>
+            {renderDotMatrix()}
+          </View>
+
+          {/* Checklist */}
+          <View style={{ marginTop: 14, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], padding: 20 }}>
+            <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>Today's Tasks</Text>
+            <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600', marginBottom: 14 }}>{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</Text>
+            
+            <View style={{ height: 6, backgroundColor: DotFuelColors.surface, borderRadius: 3, marginBottom: 16, overflow: 'hidden' }}>
+              <Animated.View style={{ width: `${progressPercent}%`, height: '100%', backgroundColor: DotFuelColors.lime }} />
+            </View>
+
+            {[
+              { id: 'cleanMeals', emoji: '🥗', label: 'All day clean meals' },
+              { id: 'workout', emoji: '🏋️', label: 'Daily workout / 10k steps' },
+              { id: 'read', emoji: '📖', label: 'Read a page' },
+              { id: 'water', emoji: '💧', label: '4 ltrs of water (Synced)' }
+            ].map((task) => {
+              const isDone = tasks[task.id as keyof typeof tasks];
+              return (
+                <Pressable
+                  key={task.id}
+                  onPress={() => toggleTask(task.id as keyof typeof tasks)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', paddingVertical: 12,
+                    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)'
+                  }}
+                >
+                  <Text style={{ fontSize: 20, width: 36 }}>{task.emoji}</Text>
+                  <Text style={{ flex: 1, fontFamily: 'Inter', fontSize: 14, fontWeight: '600', color: isDone ? DotFuelColors.muted : DotFuelColors.white, textDecorationLine: isDone ? 'line-through' : 'none' }}>
+                    {task.label}
+                  </Text>
+                  <View style={{
+                    width: 24, height: 24, borderRadius: 8, borderWidth: 2,
+                    borderColor: isDone ? DotFuelColors.lime : DotFuelColors.surface,
+                    backgroundColor: isDone ? DotFuelColors.lime : 'transparent',
+                    alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {isDone && <Text style={{ color: DotFuelColors.black, fontSize: 14, fontWeight: 'bold' }}>✓</Text>}
+                  </View>
+                </Pressable>
+              );
+            })}
+            
+            {/* Custom task */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12 }}>
+              <Text style={{ fontSize: 20, width: 36 }}>✨</Text>
+              <TextInput
+                value={customTaskName}
+                onChangeText={setCustomTaskName}
+                placeholder="My custom daily habit"
+                placeholderTextColor={DotFuelColors.muted}
+                style={{
+                  flex: 1, fontFamily: 'Inter', fontSize: 14, fontWeight: '600',
+                  color: tasks.custom ? DotFuelColors.muted : DotFuelColors.white,
+                  textDecorationLine: tasks.custom ? 'line-through' : 'none',
+                }}
+              />
+              <Pressable
+                onPress={() => toggleTask('custom')}
+                style={{
+                  width: 24, height: 24, borderRadius: 8, borderWidth: 2,
+                  borderColor: tasks.custom ? DotFuelColors.lime : DotFuelColors.surface,
+                  backgroundColor: tasks.custom ? DotFuelColors.lime : 'transparent',
+                  alignItems: 'center', justifyContent: 'center'
+                }}>
+                {tasks.custom && <Text style={{ color: DotFuelColors.black, fontSize: 14, fontWeight: 'bold' }}>✓</Text>}
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Revivals */}
+          <View style={{ marginTop: 14, flexDirection: 'row', backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], padding: 20, alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: 'Inter', fontSize: 14, fontWeight: '900', color: DotFuelColors.white }}>Streak Revivals</Text>
+              <Text style={{ fontSize: 12, color: DotFuelColors.lime, fontWeight: '700', marginTop: 4 }}>🎟️ {participant.revivals_remaining} tokens remaining</Text>
+            </View>
+            <Pressable style={{ backgroundColor: 'rgba(194,240,0,0.1)', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10 }}>
+              <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>USE REVIVAL</Text>
+            </Pressable>
+          </View>
+
+          {/* Leaderboard */}
+          <View style={{ marginTop: 14, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], padding: 20 }}>
+            <Text style={{ color: DotFuelColors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 16 }}>Challenger Board 🏆</Text>
+            {leaderboard.length === 0 ? (
+              <Text style={{ color: DotFuelColors.muted, fontSize: 12, textAlign: 'center', marginVertical: 20 }}>Loading standings...</Text>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {leaderboard.map((u, i) => {
+                  const rank = i + 1;
+                  const isMe = u.id === user?.id;
+                  const maxStreak = Math.max(leaderboard[0]?.streak_days || 1, 1);
+                  const barPct = Math.round((u.streak_days / maxStreak) * 100);
+
+                  return (
+                    <Animated.View key={u.id} entering={FadeInDown.delay(i * 50)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Text style={{ width: 24, fontSize: 16, textAlign: 'center' }}>
+                        {rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}
+                      </Text>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isMe ? DotFuelColors.limeLight : DotFuelColors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ color: isMe ? DotFuelColors.black : DotFuelColors.white, fontWeight: '800' }}>{u.name[0].toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={{ fontFamily: 'Inter', fontSize: 14, fontWeight: '700', color: isMe ? DotFuelColors.lime : DotFuelColors.white }}>
+                            {u.name} {isMe && '(You)'}
+                          </Text>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: DotFuelColors.muted }}>🔥 {u.streak_days}</Text>
+                        </View>
+                        <View style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+                          <View style={{ width: `${barPct}%`, height: '100%', backgroundColor: u.streak_days > 0 ? '#FF8C00' : 'transparent' }} />
+                        </View>
+                      </View>
+                    </Animated.View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* Social Feed Chat */}
+          <View style={{ marginTop: 14, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], overflow: 'hidden', height: 400 }}>
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
+              <Text style={{ color: DotFuelColors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' }}>Challenger Social Feed 💬</Text>
+            </View>
+            <ScrollView ref={chatScrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+              {messages.length === 0 ? (
+                <Text style={{ color: DotFuelColors.muted, fontSize: 12, textAlign: 'center', marginTop: 20 }}>Welcome to the Chat! Say hi 👋</Text>
+              ) : (
+                messages.map((msg) => {
+                  const isMe = msg.user_id === user?.id;
+                  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <Animated.View key={msg.id} entering={SlideInUp} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '85%', flexDirection: isMe ? 'row-reverse' : 'row', gap: 8 }}>
+                      <View style={{ alignSelf: 'flex-end', marginBottom: 16 }}>
+                        {msg.image_url ? (
+                          <Image source={{ uri: msg.image_url }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+                        ) : (
+                          <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: DotFuelColors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 10, color: DotFuelColors.muted, fontWeight: 'bold' }}>{msg.profile_name?.charAt(0).toUpperCase() || '?'}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        {!isMe && <Text style={{ fontSize: 10, color: DotFuelColors.muted, fontWeight: '700', marginBottom: 4, marginLeft: 4 }}>{msg.profile_name}</Text>}
+                        <View style={{ backgroundColor: isMe ? DotFuelColors.blue : DotFuelColors.surface, padding: 12, borderRadius: 16, borderBottomRightRadius: isMe ? 4 : 16, borderBottomLeftRadius: isMe ? 16 : 4 }}>
+                          <Text style={{ fontSize: 14, color: DotFuelColors.white, lineHeight: 20 }}>{msg.message}</Text>
+                        </View>
+                        <Text style={{ fontSize: 9, color: DotFuelColors.muted, marginTop: 4, textAlign: isMe ? 'right' : 'left', marginRight: isMe ? 4 : 0, marginLeft: isMe ? 0 : 4 }}>{time}</Text>
+                      </View>
+                    </Animated.View>
+                  );
+                })
+              )}
+            </ScrollView>
+            <View style={{ padding: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              <TextInput
+                value={chatInput}
+                onChangeText={setChatInput}
+                placeholder="Share your progress..."
+                placeholderTextColor={DotFuelColors.muted}
+                style={{ flex: 1, backgroundColor: DotFuelColors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: DotFuelColors.white, fontFamily: 'Inter', fontSize: 14 }}
+              />
+              <Pressable onPress={sendChatMessage} disabled={!chatInput.trim()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: chatInput.trim() ? DotFuelColors.blue : DotFuelColors.surface, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: DotFuelColors.white, fontSize: 18 }}>↑</Text>
+              </Pressable>
+            </View>
+          </View>
+
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-1BFKQR4NHS"></script>
+<script type="module" src="/src/main.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOTFUEL Admin — Challenges</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div class="login-logo">D</div>
+  <div style="text-align:center">
+    <div class="login-title">DotFuel Admin</div>
+    <div class="login-sub" style="margin-top:4px">Challenges & badges management</div>
+  </div>
+  <button class="login-btn" onclick="signInGoogle()">
+    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+    Sign in with Google
+  </button>
+  <div class="login-err" id="login-err">Access denied. Admin only.</div>
+</div>
+
+<!-- APP SCREEN -->
+<div id="app-screen">
+  <header>
+    <div class="header-logo">
+      <div class="header-dot">D</div>
+      <div class="header-title">DotFuel Admin</div>
+      <div class="header-badge">Challenges</div>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-email">—</span>
+      </div>
+      <button class="signout-btn" onclick="signOut()">Sign Out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-num" id="stat-total">—</div>
+        <div class="stat-label">Total Challenges</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color:var(--lime)" id="stat-active">—</div>
+        <div class="stat-label">Active</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" style="color:var(--muted)" id="stat-inactive">—</div>
+        <div class="stat-label">Hidden</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-badges">—</div>
+        <div class="stat-label">Badges</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('challenges', this)">Challenges</button>
+      <button class="tab" onclick="switchTab('badges', this)">Badges</button>
+      <button class="tab" onclick="switchTab('flags', this)">Feature Flags</button>
+      <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
+      <button class="tab" onclick="switchTab('users', this)">Users</button>
+      <button class="tab" onclick="switchTab('recipes', this)">Recipes 🍽️</button>
+      <button class="tab" style="color:var(--lime)" onclick="switchTab('vol3', this)">Vol3 Challenge</button>
+    </div>
+
+    <!-- CHALLENGES TAB -->
+    <div id="tab-challenges">
+      <div class="section-header">
+        <div class="section-title">All Challenges</div>
+        <button class="add-btn" onclick="openAddChallenge()">+ New Challenge</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Duration</th>
+              <th>Goal</th>
+              <th>Visible</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="challenges-tbody">
+            <tr><td colspan="7"><div class="loading"><div class="spinner"></div>Loading challenges...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- BADGES TAB -->
+    <div id="tab-badges" style="display:none">
+      <div class="section-header">
+        <div class="section-title">All Badges</div>
+        <button class="add-btn" onclick="openAddBadge()">+ New Badge</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Tier</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="badges-tbody">
+            <tr><td colspan="5"><div class="loading"><div class="spinner"></div>Loading badges...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FEATURE FLAGS TAB -->
+    <div id="tab-flags" style="display:none">
+      <div class="section-header">
+        <div class="section-title">Feature Flags</div>
+        <div style="font-size:12px;color:var(--muted);font-weight:500">Toggle features on/off for all users</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Status</th>
+              <th>Greyed Out</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="flags-tbody">
+            <tr><td colspan="4"><div class="loading"><div class="spinner"></div>Loading flags...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- USERS TAB -->
+    <div id="tab-users" style="display:none">
+      <div class="section-header">
+        <div class="section-title">Active Users</div>
+        <div style="font-size:12px;color:var(--muted);font-weight:500" id="users-count">Loading...</div>
+      </div>
+
+      <!-- Stats row — now includes Pro count -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+        <div class="stat-card">
+          <div class="stat-num" id="u-stat-total">—</div>
+          <div class="stat-label">Total Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--lime)" id="u-stat-active">—</div>
+          <div class="stat-label">Onboarded</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:#ffc107" id="u-stat-pro">—</div>
+          <div class="stat-label">Pro Users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" style="color:var(--muted)" id="u-stat-incomplete">—</div>
+          <div class="stat-label">Incomplete</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Provider</th>
+              <th>Goal</th>
+              <th>Target</th>
+              <th>Days Logged</th>
+              <th>Meals</th>
+              <th>Last Seen</th>
+              <th>Pro</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+            <tr><td colspan="9"><div class="loading"><div class="spinner"></div>Loading users...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FEEDBACK TAB -->
+    <!-- RECIPES TAB -->
+    <div id="tab-recipes" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <div class="section-title">Fuel Recipes</div>
+        <button onclick="openRecipeForm()" style="background:#C2F000;border:none;border-radius:10px;padding:8px 18px;font-size:12px;font-weight:800;color:#000;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px">+ New Recipe</button>
+      </div>
+
+      <!-- Recipe Form (hidden by default) -->
+      <div id="recipe-form-panel" style="display:none;background:var(--card);border-radius:16px;padding:20px;margin-bottom:24px;border:1px solid rgba(255,255,255,0.08)">
+        <div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:16px" id="recipe-form-title">New Recipe</div>
+        <input type="hidden" id="rf-id">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Title *</label>
+            <input id="rf-title" type="text" placeholder="e.g. High-Protein Dal Bowl" style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Photo URL</label>
+            <input id="rf-photo" type="text" placeholder="https://..." style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit">
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Description</label>
+          <textarea id="rf-desc" rows="2" placeholder="Short description of the recipe..." style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;resize:vertical"></textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px">
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#C2F000;display:block;margin-bottom:5px">Calories *</label>
+            <input id="rf-cals" type="number" placeholder="0" style="width:100%;background:var(--surface);border:1.5px solid rgba(194,240,0,0.3);border-radius:10px;padding:9px 10px;color:#C2F000;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4FC3F7;display:block;margin-bottom:5px">Protein g</label>
+            <input id="rf-protein" type="number" placeholder="0" style="width:100%;background:var(--surface);border:1.5px solid rgba(79,195,247,0.3);border-radius:10px;padding:9px 10px;color:#4FC3F7;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#C2F000;display:block;margin-bottom:5px">Carbs g</label>
+            <input id="rf-carbs" type="number" placeholder="0" style="width:100%;background:var(--surface);border:1.5px solid rgba(194,240,0,0.3);border-radius:10px;padding:9px 10px;color:#C2F000;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#4CAF50;display:block;margin-bottom:5px">Fat g</label>
+            <input id="rf-fat" type="number" placeholder="0" style="width:100%;background:var(--surface);border:1.5px solid rgba(76,175,80,0.3);border-radius:10px;padding:9px 10px;color:#4CAF50;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px">Prep min</label>
+            <input id="rf-time" type="number" placeholder="15" style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px 10px;color:#fff;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+          <div>
+            <label style="font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px">Servings</label>
+            <input id="rf-servings" type="number" placeholder="1" style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px 10px;color:#fff;font-size:15px;font-weight:800;outline:none;font-family:inherit;text-align:center">
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Ingredients (one per line: "emoji name amount" e.g. "🍗 Chicken breast 200g")</label>
+          <textarea id="rf-ingredients" rows="5" placeholder="🍗 Chicken breast 200g&#10;🥦 Broccoli 100g&#10;🫒 Olive oil 1 tbsp" style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;resize:vertical"></textarea>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <label style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Instructions</label>
+          <textarea id="rf-instructions" rows="5" placeholder="Step-by-step cooking instructions..." style="width:100%;background:var(--surface);border:1.5px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;resize:vertical"></textarea>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#fff;font-weight:600">
+            <input type="checkbox" id="rf-published" style="width:16px;height:16px;cursor:pointer">
+            Publish immediately (visible to all users)
+          </label>
+          <div style="flex:1"></div>
+          <button onclick="closeRecipeForm()" style="background:transparent;border:1.5px solid rgba(255,255,255,0.15);border-radius:10px;padding:9px 20px;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer">Cancel</button>
+          <button onclick="saveRecipe()" style="background:#C2F000;border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;color:#000;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px" id="rf-save-btn">SAVE RECIPE</button>
+        </div>
+      </div>
+
+      <!-- Recipes list -->
+      <div id="recipes-list">
+        <div style="text-align:center;padding:24px;font-size:13px;color:var(--muted)">Loading recipes...</div>
+      </div>
+    </div>
+
+    <div id="tab-feedback" style="display:none">
+      <div class="section-header">
+        <div class="section-title">User Feedback</div>
+        <div style="font-size:12px;color:var(--muted);font-weight:500" id="feedback-count">Loading...</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rating</th>
+              <th>Category</th>
+              <th>Message</th>
+              <th>User</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="feedback-tbody">
+            <tr><td colspan="5"><div class="loading"><div class="spinner"></div>Loading feedback...</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <!-- VOL3 CHALLENGE TAB -->
+    <div id="tab-vol3" style="display:none">
+      <div class="section-header">
+        <div class="section-title">Vol3 Participants</div>
+        <button onclick="openVol3PushModal()" class="add-btn">
+          Broadcast Push
+        </button>
+      </div>
+      
+      <div style="display:flex; gap:12px; margin-bottom:16px;">
+        <input type="text" id="vol3-search" placeholder="Search by name or email..." style="flex:1; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; color:#fff; font-size:13px; outline:none;" onkeyup="filterVol3Users()">
+        <select id="vol3-filter" style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; color:#fff; font-size:13px; outline:none;" onchange="filterVol3Users()">
+          <option value="all">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="failed">Failed</option>
+          <option value="completed">Completed</option>
+          <option value="suspended">Suspended</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Status</th>
+              <th>Revivals</th>
+              <th>Cut List</th>
+              <th>Joined At</th>
+              <th style="text-align:right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="vol3-table-body">
+            <!-- Rendered by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL: VOL3 EDIT USER -->
+  <div id="vol3-edit-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Edit Participant</div>
+        <button class="modal-close" onclick="closeVol3EditModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="vol3-edit-userid">
+        
+        <div style="margin-bottom:16px">
+          <label style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:6px; display:block;">Status</label>
+          <select id="vol3-edit-status" style="width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; color:#fff; font-size:14px; outline:none;">
+            <option value="active">Active</option>
+            <option value="failed">Failed</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <label style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:6px; display:block;">Revivals Remaining</label>
+          <input type="number" id="vol3-edit-revivals" style="width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; color:#fff; font-size:14px; outline:none;">
+        </div>
+
+        <div style="margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; background:var(--surface); padding:16px; border-radius:10px; border:1px solid var(--border);">
+          <div>
+            <div style="font-size:14px; font-weight:700; color:#fff;">Suspend User</div>
+            <div style="font-size:11px; color:var(--muted);">Blocks dashboard and chat access</div>
+          </div>
+          <label style="position:relative; display:inline-block; width:44px; height:24px;">
+            <input type="checkbox" id="vol3-edit-suspended" style="opacity:0; width:0; height:0;">
+            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:var(--card); border:1px solid var(--border); transition:.3s; border-radius:24px;" class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div style="margin-bottom:24px">
+          <label style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:6px; display:block;">Admin Notes</label>
+          <textarea id="vol3-edit-notes" rows="3" style="width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; color:#fff; font-size:14px; outline:none; resize:none;"></textarea>
+        </div>
+
+        <div style="display:flex; gap:12px">
+          <button onclick="saveVol3Participant()" style="flex:1; background:var(--lime); color:#000; border:none; padding:14px; border-radius:12px; font-weight:800; text-transform:uppercase; cursor:pointer;">Save Changes</button>
+          <button onclick="sendVol3DirectPush()" style="background:var(--card); color:var(--white); border:1px solid var(--border); padding:14px; border-radius:12px; font-weight:700; text-transform:uppercase; cursor:pointer;">Send Push</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: VOL3 PUSH BROADCAST -->
+  <div id="vol3-push-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Broadcast Push Notification</div>
+        <button class="modal-close" onclick="closeVol3PushModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:16px">
+          <label style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:6px; display:block;">Title</label>
+          <input type="text" id="vol3-push-title" placeholder="e.g., Challenge Update!" style="width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; color:#fff; font-size:14px; outline:none;">
+        </div>
+        <div style="margin-bottom:24px">
+          <label style="font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; margin-bottom:6px; display:block;">Message</label>
+          <textarea id="vol3-push-body" rows="3" placeholder="Push notification content..." style="width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; color:#fff; font-size:14px; outline:none; resize:none;"></textarea>
+        </div>
+        <button onclick="sendVol3Broadcast()" style="width:100%; background:var(--lime); color:#000; border:none; padding:14px; border-radius:12px; font-weight:800; text-transform:uppercase; cursor:pointer;">Broadcast Now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CHALLENGE MODAL (Add / Edit) ═══ -->
+<div class="modal-overlay" id="modal-challenge" onclick="handleOverlay(event,'modal-challenge')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="ch-modal-title">New Challenge</div>
+    <div class="modal-sub" id="ch-modal-sub">Add a new challenge to the app</div>
+    <input type="hidden" id="ch-id">
+
+    <div class="field-group">
+      <label class="field-label">Emoji</label>
+      <div class="emoji-picker" id="ch-emoji-picker">
+        💪 🔥 🚶 ⚡ 💧 🌈 🌅 🚫 🎯 🏋️ 🧘 🏃 🚴 🥗 🥦 🫀 🏆 🌟 ⚖️ 🎖️
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Name</label>
+      <input class="field-input" id="ch-name" type="text" placeholder="e.g. Protein Streak" oninput="validateChallenge()">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Description</label>
+      <input class="field-input" id="ch-desc" type="text" placeholder="e.g. Hit your protein goal for 7 days in a row">
+    </div>
+
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Type</label>
+        <select class="field-input" id="ch-type">
+          <option value="diet">Diet</option>
+          <option value="fitness">Fitness</option>
+          <option value="combo">Combo</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Duration (days)</label>
+        <input class="field-input" id="ch-duration" type="number" min="1" max="365" placeholder="7" oninput="validateChallenge()">
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field-group">
+        <label class="field-label">Goal Metric</label>
+        <select class="field-input" id="ch-metric">
+          <option value="protein_target">Protein Target</option>
+          <option value="calorie_target">Calorie Target</option>
+          <option value="fuel_score">Fuel Score</option>
+          <option value="water_goal">Water Goal</option>
+          <option value="steps">Steps</option>
+          <option value="morning_workout">Morning Workout</option>
+          <option value="food_variety">Food Variety</option>
+          <option value="clean_meals">Clean Meals</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Goal Value</label>
+        <input class="field-input" id="ch-value" type="number" min="1" placeholder="1">
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Visible in App</label>
+      <select class="field-input" id="ch-active">
+        <option value="true">Yes — Show to users</option>
+        <option value="false">No — Hidden</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal('modal-challenge')">Cancel</button>
+      <button class="modal-save" id="ch-save" onclick="saveChallenge()" disabled>SAVE CHALLENGE →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BADGE MODAL (Add / Edit) ═══ -->
+<div class="modal-overlay" id="modal-badge" onclick="handleOverlay(event,'modal-badge')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="badge-modal-title">New Badge</div>
+    <div class="modal-sub">Badges are awarded when users complete challenges</div>
+    <input type="hidden" id="badge-id">
+
+    <div class="field-group">
+      <label class="field-label">Emoji</label>
+      <div class="emoji-picker" id="badge-emoji-picker">
+        🔥 💎 💪 💧 🥗 ⚡ 🏆 🌟 🎖️ 🥇 🎯 🏅
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Name</label>
+      <input class="field-input" id="badge-name" type="text" placeholder="e.g. 7-Day Streak" oninput="validateBadge()">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Description</label>
+      <input class="field-input" id="badge-desc" type="text" placeholder="e.g. Logged every day for 7 days">
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Tier</label>
+      <select class="field-input" id="badge-tier">
+        <option value="bronze">Bronze</option>
+        <option value="silver">Silver</option>
+        <option value="gold">Gold</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal('modal-badge')">Cancel</button>
+      <button class="modal-save" id="badge-save" onclick="saveBadge()" disabled>SAVE BADGE →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DELETE CONFIRM ═══ -->
+<div class="modal-overlay" id="modal-delete" onclick="handleOverlay(event,'modal-delete')">
+  <div class="modal delete-modal" onclick="event.stopPropagation()" style="max-width:400px">
+    <div class="modal-title">Delete?</div>
+    <div class="modal-sub" id="delete-msg">This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal('modal-delete')">Cancel</button>
+      <button class="modal-save" id="delete-confirm-btn">DELETE →</button>
+    </div>
+  </div>
+</div>
+
+
+</body>
+</html>
