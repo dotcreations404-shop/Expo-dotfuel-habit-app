@@ -103,6 +103,27 @@ export interface UserChallenge {
   joined_at?: string;
 }
 
+export interface DotDuoProfile {
+  id: string;
+  user_id: string;
+  goal: string;
+  diet: string;
+  vibe: string;
+  gender: string;
+  partner_gender: string;
+  is_looking: boolean;
+  partner_id?: string;
+  created_at?: string;
+}
+
+export interface DotDuoMessage {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
+}
+
 export type FuelMode = 'cut' | 'lean' | 'balance' | 'clean' | 'perform';
 
 export const FUEL_MODES: Record<FuelMode, { label: string; emoji: string; tag: string; color: string }> = {

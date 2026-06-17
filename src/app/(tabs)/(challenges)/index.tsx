@@ -76,6 +76,46 @@ export default function ChallengesScreen() {
         </Pressable>
       </Animated.View>
 
+      {/* Dot Duo Card */}
+      <Animated.View entering={FadeInDown.delay(150).duration(400)}>
+        <Pressable
+          onPress={() => {
+            if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push('/(tabs)/(challenges)/dot-duo');
+          }}
+          style={({ pressed }) => ({
+            marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md,
+            backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
+            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+            padding: 22, overflow: 'hidden',
+            opacity: pressed ? 0.9 : 1,
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          })}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <View style={{
+              width: 56, height: 56, borderRadius: 28,
+              backgroundColor: 'rgba(255,100,150,0.15)',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 28 }}>🤝</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontFamily: 'Inter', fontSize: 18, fontWeight: '900',
+                color: DotFuelColors.white,
+              }}>
+                Dot Duo
+              </Text>
+              <Text style={{ fontSize: 12, color: DotFuelColors.muted, fontWeight: '500', marginTop: 2 }}>
+                Find an accountability partner. Chat and share your daily macros to stay on track.
+              </Text>
+            </View>
+            <Text style={{ fontSize: 20, color: DotFuelColors.muted }}>›</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+
       {/* Active Challenge — Vol 3 */}
       <Animated.View entering={FadeInDown.delay(200).duration(400)}>
         <View style={{
