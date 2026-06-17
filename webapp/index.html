@@ -4377,15 +4377,7 @@ body {
             <div style="padding:48px 24px;text-align:center;font-size:12px;color:var(--muted);font-weight:500">Loading chat feed...</div>
           </div>
           
-          <!-- Image preview strip -->
-          <div id="vol3-chat-img-preview" style="display:none;background:rgba(22,22,22,0.9);padding:8px 14px;border-top:1px solid rgba(255,255,255,0.04);align-items:center;justify-content:space-between">
-            <span style="font-size:11px;color:var(--lime);font-weight:700">📸 Image selected</span>
-            <button onclick="clearVol3ChatFile()" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:10px;font-weight:800;letter-spacing:0.5px">REMOVE</button>
-          </div>
-
           <div class="vol3-chat-input-bar">
-            <input type="file" id="vol3-chat-file" accept="image/*" style="display:none" onchange="handleVol3ChatFileSelect(this)">
-            <button class="vol3-icon-btn" onclick="document.getElementById('vol3-chat-file').click()" id="vol3-photo-btn" title="Add food photo">📷</button>
             <input class="vol3-chat-input" id="vol3-chat-input" placeholder="Type a message..." maxlength="200" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendVol3ChatMessage()}">
             <button class="vol3-icon-btn send-btn" onclick="sendVol3ChatMessage()" id="vol3-send-btn">➤</button>
           </div>
@@ -10226,7 +10218,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ── DOT CHALLENGE Vol3 JS Controller ─────────────────────────────────────────
 let currentVol3Participant = null;
-let selectedVol3ChatFile = null;
+
 let chatRealtimeChannel = null;
 let todaysChecklistRow = null;
 let vol3ChatUserCache = {}; // Cache user profiles for chat
@@ -11234,21 +11226,7 @@ function openFullscreenImage(url) {
   document.body.appendChild(overlay);
 }
 
-// File picker interactions
-function handleVol3ChatFileSelect(input) {
-  if (input.files && input.files[0]) {
-    selectedVol3ChatFile = input.files[0];
-    document.getElementById('vol3-chat-img-preview').style.display = 'flex';
-    document.getElementById('vol3-photo-btn').textContent = '✅';
-  }
-}
 
-function clearVol3ChatFile() {
-  selectedVol3ChatFile = null;
-  document.getElementById('vol3-chat-file').value = '';
-  document.getElementById('vol3-chat-img-preview').style.display = 'none';
-  document.getElementById('vol3-photo-btn').textContent = '📷';
-}
 
 async function sendVol3ChatMessage() {
   if (!currentUser) return;
@@ -11256,81 +11234,34 @@ async function sendVol3ChatMessage() {
   const inp = document.getElementById('vol3-chat-input');
   const text = inp.value.trim();
   
-  if (!text && !selectedVol3ChatFile) return;
+  if (!text) return;
 
   // Disable UI inputs
   inp.disabled = true;
   const sendBtn = document.getElementById('vol3-send-btn');
-  const photoBtn = document.getElementById('vol3-photo-btn');
   if (sendBtn) sendBtn.disabled = true;
-  if (photoBtn) photoBtn.disabled = true;
-
-  let photoUrl = null;
 
   try {
-    // 1. Upload photo if selected (with client-side compression)
-    if (selectedVol3ChatFile) {
-      photoBtn.textContent = '⏳';
-      try {
-        // Compress the image before uploading
-        const compressedBlob = await compressImage(selectedVol3ChatFile, 1200, 0.7);
-        const path = `challenge-vol3/${currentUser.id}/${Date.now()}.jpg`;
-        
-        const { data: uploaded, error: upErr } = await sb.storage
-          .from('meal-photos')
-          .upload(path, compressedBlob, { contentType: 'image/jpeg', upsert: false });
-
-        if (!upErr && uploaded) {
-          const { data: { publicUrl } } = sb.storage.from('meal-photos').getPublicUrl(path);
-          photoUrl = publicUrl;
-        } else if (upErr) {
-          console.warn('Chat image upload failed:', upErr.message);
-          showToast('Image upload failed, sending text only');
-        }
-      } catch (compErr) {
-        console.warn('Image compression failed, uploading raw:', compErr);
-        // Fallback: upload without compression
-        const ext = selectedVol3ChatFile.name.split('.').pop().toLowerCase() || 'jpg';
-        const path = `challenge-vol3/${currentUser.id}/${Date.now()}.${ext}`;
-        const { data: uploaded, error: upErr } = await sb.storage
-          .from('meal-photos')
-          .upload(path, selectedVol3ChatFile, { contentType: selectedVol3ChatFile.type, upsert: false });
-        if (!upErr && uploaded) {
-          const { data: { publicUrl } } = sb.storage.from('meal-photos').getPublicUrl(path);
-          photoUrl = publicUrl;
-        } else if (upErr) {
-          console.warn('Fallback upload failed:', upErr.message);
-          showToast('Image upload failed, sending text only');
-        }
-      }
-    }
-
-    // 2. Insert chat row
     const { error: chatErr } = await sb
       .from('challenge_vol3_chat')
       .insert({
         user_id: currentUser.id,
         profile_name: userProfile?.name || 'User',
-        message: text || null,
-        image_url: photoUrl
+        message: text
       });
 
     if (chatErr) {
       console.error('Error inserting chat message:', chatErr);
       showToast('Could not send message: ' + chatErr.message);
     } else {
-      // Clear inputs
       inp.value = '';
-      clearVol3ChatFile();
     }
   } catch (err) {
     console.error('Send message exception:', err);
     showToast('Failed to send message');
   } finally {
-    // Re-enable inputs
     inp.disabled = false;
     if (sendBtn) sendBtn.disabled = false;
-    if (photoBtn) photoBtn.disabled = false;
     inp.focus();
   }
 }
