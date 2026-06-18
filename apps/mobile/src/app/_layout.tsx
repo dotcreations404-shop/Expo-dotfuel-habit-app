@@ -89,7 +89,9 @@ function AuthGate() {
         width: '100%',
         marginHorizontal: 'auto',
         backgroundColor: DotFuelTheme.colors.background,
-        overflow: 'hidden',
+        overflow: (Platform.OS === 'web'
+          ? (typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent) ? 'visible' : 'auto')
+          : 'visible') as any,
       }}>
         <Slot />
       </View>

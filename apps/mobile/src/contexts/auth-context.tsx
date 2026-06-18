@@ -9,12 +9,15 @@
  * only evaluated once both session AND profile are definitively known.
  */
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { UserProfile } from '@/lib/types';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { savePushToken } from '@/lib/notifications';
+
+WebBrowser.maybeCompleteAuthSession();
 
 interface AuthContextValue {
   /** Current Supabase session (null if signed out). */
@@ -133,21 +136,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Auth actions ──────────────────────────────────────────────────────────
   const signInWithGoogle = useCallback(async () => {
-    const redirectTo = Linking.createURL('/');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-    if (error) Alert.alert('Sign In Error', error.message);
+    try {
+      const redirectTo = Linking.createURL('/');
+      if (Platform.OS === 'web') {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo },
+        });
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error) throw error;
+
+        if (data?.url) {
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+          if (result.type === 'success') {
+            const { url } = result;
+            const params = Linking.parse(url);
+            const { access_token, refresh_token } = params.queryParams || {};
+            if (access_token && refresh_token) {
+              const { error: setSessionError } = await supabase.auth.setSession({
+                access_token: access_token as string,
+                refresh_token: refresh_token as string,
+              });
+              if (setSessionError) throw setSessionError;
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Sign In Error', err.message || 'Failed to sign in with Google');
+    }
   }, []);
 
   const signInWithApple = useCallback(async () => {
-    const redirectTo = Linking.createURL('/');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
-      options: { redirectTo },
-    });
-    if (error) Alert.alert('Sign In Error', error.message);
+    try {
+      const redirectTo = Linking.createURL('/');
+      if (Platform.OS === 'web') {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'apple',
+          options: { redirectTo },
+        });
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'apple',
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error) throw error;
+
+        if (data?.url) {
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+          if (result.type === 'success') {
+            const { url } = result;
+            const params = Linking.parse(url);
+            const { access_token, refresh_token } = params.queryParams || {};
+            if (access_token && refresh_token) {
+              const { error: setSessionError } = await supabase.auth.setSession({
+                access_token: access_token as string,
+                refresh_token: refresh_token as string,
+              });
+              if (setSessionError) throw setSessionError;
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Sign In Error', err.message || 'Failed to sign in with Apple');
+    }
   }, []);
 
   const sendOtp = useCallback(async (email: string) => {

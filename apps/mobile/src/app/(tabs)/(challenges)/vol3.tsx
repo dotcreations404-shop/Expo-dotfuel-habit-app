@@ -33,8 +33,8 @@ const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: 
     opacity: opacity.value,
   }));
 
-  const color = completed ? '#39FF14' : DotFuelColors.limeLight;
-  const border = '#39FF14';
+  const color = completed ? DotFuelColors.lime : DotFuelColors.limeLight;
+  const border = DotFuelColors.lime;
 
   return (
     <Pressable onPress={onPress} style={{ width: 22, height: 22, justifyContent: 'center', alignItems: 'center' }}>
@@ -44,7 +44,7 @@ const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: 
         height: 20,
         borderRadius: 10,
         borderWidth: 2,
-        borderColor: '#39FF14',
+        borderColor: DotFuelColors.lime,
       }, animatedRingStyle]} />
       <View style={{
         width: 18,
@@ -389,8 +389,8 @@ export default function Vol3ChallengeScreen() {
             if (!isFuture) {
               if (isCompleted) {
                 // Neon Green State
-                color = '#39FF14';
-                border = '#39FF14';
+                color = DotFuelColors.lime;
+                border = DotFuelColors.lime;
               } else {
                 // Muted Red / Dark Border
                 color = 'rgba(255, 59, 59, 0.15)';
@@ -420,7 +420,7 @@ export default function Vol3ChallengeScreen() {
                     width: 20,
                     height: 20,
                     borderRadius: 10,
-                    backgroundColor: '#39FF14',
+                    backgroundColor: DotFuelColors.lime,
                     opacity: 0.15,
                   }} />
                 )}
@@ -809,18 +809,18 @@ export default function Vol3ChallengeScreen() {
                 <View style={{ gap: 18 }}>
                   {/* Status Box */}
                   <View style={{
-                    backgroundColor: isFuture ? DotFuelColors.surface : isCompleted ? 'rgba(57,255,20,0.1)' : 'rgba(255,59,59,0.1)',
+                    backgroundColor: isFuture ? DotFuelColors.surface : isCompleted ? 'rgba(194,240,0,0.1)' : 'rgba(255,59,59,0.1)',
                     borderRadius: 12,
                     padding: 14,
                     borderWidth: 1,
-                    borderColor: isFuture ? 'rgba(255,255,255,0.05)' : isCompleted ? '#39FF14' : DotFuelColors.red,
+                    borderColor: isFuture ? 'rgba(255,255,255,0.05)' : isCompleted ? DotFuelColors.lime : DotFuelColors.red,
                     alignItems: 'center',
                   }}>
                     <Text style={{
                       fontFamily: 'Inter',
                       fontSize: 14,
                       fontWeight: '800',
-                      color: isFuture ? DotFuelColors.muted : isCompleted ? '#39FF14' : DotFuelColors.red,
+                      color: isFuture ? DotFuelColors.muted : isCompleted ? DotFuelColors.lime : DotFuelColors.red,
                       textTransform: 'uppercase',
                       letterSpacing: 1,
                     }}>
@@ -854,17 +854,17 @@ export default function Vol3ChallengeScreen() {
                           </Text>
                         </View>
                         <View style={{
-                          backgroundColor: item.done ? 'rgba(57,255,20,0.15)' : 'rgba(255,255,255,0.05)',
+                          backgroundColor: item.done ? 'rgba(194,240,0,0.15)' : 'rgba(255,255,255,0.05)',
                           borderRadius: 8,
                           paddingVertical: 4,
                           paddingHorizontal: 8,
                           borderWidth: 1,
-                          borderColor: item.done ? '#39FF14' : 'rgba(255,255,255,0.1)',
+                          borderColor: item.done ? DotFuelColors.lime : 'rgba(255,255,255,0.1)',
                         }}>
                           <Text style={{
                             fontSize: 10,
                             fontWeight: '800',
-                            color: item.done ? '#39FF14' : DotFuelColors.muted,
+                            color: item.done ? DotFuelColors.lime : DotFuelColors.muted,
                             textTransform: 'uppercase',
                           }}>
                             {item.done ? 'Done' : 'Missed'}

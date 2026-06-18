@@ -30,11 +30,10 @@ export default function Onboarding() {
   const [height, setHeight] = useState('');
   const [goal, setGoal] = useState<'cut' | 'balance' | 'lean'>('balance');
   const [activity, setActivity] = useState<'sedentary' | 'light' | 'moderate' | 'active'>('moderate');
-  const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   const next = () => {
     if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (step < 4) {
+    if (step < 5) {
       setStep(step + 1);
     }
   };
@@ -117,7 +116,6 @@ export default function Onboarding() {
     },
     onSuccess: (savedProfile: UserProfile) => {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowBriefingModal(false);
       setProfileDirect(savedProfile);
     },
     onError: (err: Error) => {
@@ -245,6 +243,60 @@ export default function Onboarding() {
       case 3:
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
+            <Text style={sectionTitle}>Before You Fuel</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18 }}>
+              Understand the visual language of the application's central fuel metrics.
+            </Text>
+
+            <View style={{ gap: 12, marginTop: 8 }}>
+              {/* Blue */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.blue, borderRadius: 14, padding: 16 }}>
+                <Text style={{ fontSize: 24 }}>🔵</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>Blue State (80% Fueled)</Text>
+                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
+                    Within striking distance of optimal execution.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Red */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.red, borderRadius: 14, padding: 16 }}>
+                <Text style={{ fontSize: 24 }}>🔴</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.red }}>Glowing Red State (&lt;30% Fueled)</Text>
+                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
+                    Fueling is insufficient or poor; an urgent trigger to step up intake.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Green */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.lime, borderRadius: 14, padding: 16 }}>
+                <View style={{
+                  width: 20, height: 20, borderRadius: 10,
+                  backgroundColor: DotFuelColors.lime,
+                  shadowColor: DotFuelColors.lime,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.6,
+                  shadowRadius: 6,
+                  elevation: 4,
+                  alignItems: 'center', justifyContent: 'center'
+                }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.lime }}>Neon Green State (100% Fully Fueled)</Text>
+                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
+                    Perfect synchronization of targeted performance nutrition.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </Animated.View>
+        );
+
+      case 4:
+        return (
+          <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
             <Text style={sectionTitle}>Goal & Activity</Text>
 
             {/* Goal Selector */}
@@ -322,7 +374,7 @@ export default function Onboarding() {
           </Animated.View>
         );
 
-      case 4:
+      case 5:
         return (
           <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center' }}>
             <View style={{
@@ -376,11 +428,11 @@ export default function Onboarding() {
     }
   };
 
-  const isLast = step === 4;
-  const canContinue = step === 0 || step === 4 ||
+  const isLast = step === 5;
+  const canContinue = step === 0 || step === 3 || step === 5 ||
     (step === 1 && name.trim()) ||
     (step === 2 && weight && height) ||
-    step === 3;
+    step === 4;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
@@ -395,7 +447,7 @@ export default function Onboarding() {
             flexDirection: 'row', gap: 5, justifyContent: 'center',
             paddingTop: 16, paddingHorizontal: Spacing['2xl'], paddingBottom: 24,
           }}>
-            {[0, 1, 2, 3, 4].map((i) => (
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <View key={i} style={{
                 flex: 1, height: 3, borderRadius: 2,
                 backgroundColor: i < step
@@ -420,101 +472,13 @@ export default function Onboarding() {
         }}>
           <Button
             title={saveMutation.isPending ? 'Setting up…' : isLast ? "Let's Go! 🚀" : 'Continue'}
-            onPress={isLast ? () => setShowBriefingModal(true) : next}
+            onPress={isLast ? () => {
+              if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              saveMutation.mutate();
+            } : next}
             disabled={!canContinue || saveMutation.isPending}
           />
         </View>
-
-        {/* ── BEFORE YOU FUEL BRIEFING MODAL ── */}
-        <Modal
-          visible={showBriefingModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowBriefingModal(false)}
-        >
-          <View style={{
-            flex: 1, backgroundColor: 'rgba(0,0,0,0.88)',
-            justifyContent: 'center', alignItems: 'center',
-            padding: 24
-          }}>
-            <View style={{
-              width: '100%', backgroundColor: DotFuelColors.card,
-              borderRadius: 24, borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-              padding: 24, gap: 20
-            }}>
-              {/* Header */}
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ fontSize: 32, marginBottom: 8 }}>⭕</Text>
-                <Text style={{
-                  fontFamily: 'Inter', fontSize: 20, fontWeight: '900',
-                  color: DotFuelColors.white, textTransform: 'uppercase',
-                  letterSpacing: 0.5, textAlign: 'center'
-                }}>
-                  Understanding Your Dot Circle
-                </Text>
-                <Text style={{
-                  fontSize: 12, color: DotFuelColors.muted, fontWeight: '500',
-                  textAlign: 'center', marginTop: 4, lineHeight: 18
-                }}>
-                  Dot Fuel uses visual colors to represent your metabolic readiness.
-                </Text>
-              </View>
-
-              {/* Legends list */}
-              <View style={{ gap: 14, marginVertical: 8 }}>
-                {/* Blue */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.surface, borderRadius: 12, padding: 12 }}>
-                  <Text style={{ fontSize: 24 }}>🔵</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: DotFuelColors.white }}>Blue State (80% Fueled)</Text>
-                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>Within striking distance of optimal execution.</Text>
-                  </View>
-                </View>
-
-                {/* Red */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.surface, borderRadius: 12, padding: 12 }}>
-                  <Text style={{ fontSize: 24 }}>🔴</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#FF3B3B' }}>Glowing Red State (&lt;30% Fueled)</Text>
-                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>Fueling is insufficient/poor; alerts you to step up intake.</Text>
-                  </View>
-                </View>
-
-                {/* Green */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.surface, borderRadius: 12, padding: 12 }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#39FF14', shadowColor: '#39FF14', shadowRadius: 6, shadowOpacity: 0.8 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#39FF14' }}>Neon Green State (100% Fueled)</Text>
-                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>Perfect synchronization of nutrition and target execution.</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Action */}
-              <Pressable
-                onPress={() => {
-                  if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  saveMutation.mutate();
-                }}
-                disabled={saveMutation.isPending}
-                style={({ pressed }) => ({
-                  backgroundColor: '#1E49CF',
-                  borderRadius: 16, paddingVertical: 16,
-                  alignItems: 'center', justifyContent: 'center',
-                  opacity: (pressed || saveMutation.isPending) ? 0.85 : 1,
-                  marginTop: 8
-                })}
-              >
-                <Text style={{
-                  fontFamily: 'Inter', fontSize: 14, fontWeight: '900',
-                  color: DotFuelColors.white, textTransform: 'uppercase', letterSpacing: 1
-                }}>
-                  {saveMutation.isPending ? 'Saving metrics...' : "Let's Fuel 🚀"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
 
       </KeyboardAvoidingView>
     </SafeAreaView>
