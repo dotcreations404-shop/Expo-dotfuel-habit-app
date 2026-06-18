@@ -63,50 +63,6 @@ export default function ChallengesScreen() {
         </Pressable>
       </View>
 
-      {/* DotBoy Card — .challenge-card.blue with 4px left blue strip */}
-      <Animated.View entering={FadeInDown.delay(100).duration(400)}>
-        <Pressable
-          onPress={() => {
-            if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push('/(tabs)/(challenges)/dotboy');
-          }}
-          style={({ pressed }) => ({
-            marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md,
-            backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
-            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-            padding: 22, overflow: 'hidden',
-            opacity: pressed ? 0.9 : 1,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-          })}
-        >
-          {/* 4px left blue strip — matches webapp .challenge-card.blue::before */}
-          <View style={{
-            position: 'absolute', top: 0, left: 0, bottom: 0, width: 4,
-            backgroundColor: DotFuelColors.blue, borderRadius: 2,
-          }} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingLeft: 8 }}>
-            <View style={{
-              width: 56, height: 56, borderRadius: 28,
-              backgroundColor: DotFuelColors.blueLight,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: 28 }}>🤖</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{
-                fontFamily: 'Inter', fontSize: 15, fontWeight: '800',
-                color: DotFuelColors.white, textTransform: 'uppercase', letterSpacing: 0.5,
-              }}>
-                Dot Boy
-              </Text>
-              <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600', marginTop: 2 }}>
-                Your AI personal trainer. Ask anything about fitness, nutrition, or workout plans.
-              </Text>
-            </View>
-            <Text style={{ fontSize: 20, color: DotFuelColors.muted }}>›</Text>
-          </View>
-        </Pressable>
-      </Animated.View>
 
       {/* Dot Duo Card — .challenge-card with 4px left green strip */}
       <Animated.View entering={FadeInDown.delay(150).duration(400)}>

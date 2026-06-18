@@ -1,15 +1,62 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image } from 'react-native';
+import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image, Modal, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Stack, useRouter } from 'expo-router';
-import Animated, { FadeInDown, FadeIn, SlideInUp } from 'react-native-reanimated';
+import Animated, { 
+  FadeInDown, 
+  FadeIn, 
+  SlideInUp, 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withRepeat, 
+  withTiming 
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import type { Vol3Participant, Vol3DailyProgress, Vol3ChatMessage, UserProfile } from '@/lib/types';
 import * as Haptics from 'expo-haptics';
+
+const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: () => void }) => {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(0.7);
+
+  useEffect(() => {
+    scale.value = withRepeat(withTiming(1.5, { duration: 1400 }), -1, true);
+    opacity.value = withRepeat(withTiming(0.1, { duration: 1400 }), -1, true);
+  }, []);
+
+  const animatedRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  const color = completed ? '#39FF14' : DotFuelColors.limeLight;
+  const border = '#39FF14';
+
+  return (
+    <Pressable onPress={onPress} style={{ width: 22, height: 22, justifyContent: 'center', alignItems: 'center' }}>
+      <Animated.View style={[{
+        position: 'absolute',
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: '#39FF14',
+      }, animatedRingStyle]} />
+      <View style={{
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: color,
+        borderWidth: 1,
+        borderColor: border,
+      }} />
+    </Pressable>
+  );
+};
 
 export default function Vol3ChallengeScreen() {
   const router = useRouter();
@@ -29,6 +76,11 @@ export default function Vol3ChallengeScreen() {
   const [messages, setMessages] = useState<Vol3ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const chatScrollRef = useRef<ScrollView>(null);
+
+  // Inspector states
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [inspectorVisible, setInspectorVisible] = useState(false);
+
 
   const [tasks, setTasks] = useState({
     cleanMeals: false,
@@ -112,8 +164,8 @@ export default function Vol3ChallengeScreen() {
             cleanMeals: todayRow.clean_meals,
             workout: todayRow.workout,
             read: todayRow.read_page,
-            water: todayRow.water_synced,
-            custom: todayRow.custom_task,
+            water: todayRow.water_synced_override,
+            custom: todayRow.custom_task_done,
           });
         }
       }
@@ -186,11 +238,70 @@ export default function Vol3ChallengeScreen() {
   };
 
   const toggleTask = async (key: keyof typeof tasks) => {
+    if (!user || !participant) return;
     if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
     const nextVal = !tasks[key];
+    
+    // Update local state instantly (optimistic UI)
     setTasks(prev => ({ ...prev, [key]: nextVal }));
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Calculate new compliance status
+    const updatedTasks = { ...tasks, [key]: nextVal };
+    const completedCount = Object.values(updatedTasks).filter(Boolean).length;
+    const isCalculatedSuccess = completedCount >= 4;
 
-    // Real app would update Supabase `challenge_vol3_daily_progress` here
+    const upsertData = {
+      user_id: user.id,
+      log_date: todayStr,
+      clean_meals: updatedTasks.cleanMeals,
+      workout: updatedTasks.workout,
+      read_page: updatedTasks.read,
+      water_synced_override: updatedTasks.water,
+      custom_task_done: updatedTasks.custom,
+      is_calculated_success: isCalculatedSuccess,
+      revival_applied: progressData[todayStr]?.revival_applied || false
+    };
+
+    // Optimistically update progressData cache as well
+    setProgressData(prev => ({
+      ...prev,
+      [todayStr]: {
+        ...prev[todayStr],
+        ...upsertData,
+        id: prev[todayStr]?.id || ''
+      } as any
+    }));
+
+    try {
+      const { error } = await supabase
+        .from('challenge_vol3_daily_progress')
+        .upsert(upsertData, { onConflict: 'user_id,log_date' });
+        
+      if (error) {
+        console.log('Error upserting daily progress', error);
+        // Rollback on error
+        setTasks(prev => ({ ...prev, [key]: !nextVal }));
+        loadDashboardData();
+      }
+    } catch (err) {
+      console.log('Error toggling task', err);
+      loadDashboardData();
+    }
+  };
+
+  const saveCustomTaskTitle = async () => {
+    if (!user || !participant) return;
+    try {
+      await supabase
+        .from('challenge_vol3_participants')
+        .update({ custom_task_title: customTaskName })
+        .eq('user_id', user.id);
+    } catch (err) {
+      console.log('Error saving custom task title', err);
+    }
   };
 
   const sendChatMessage = async () => {
@@ -210,6 +321,14 @@ export default function Vol3ChallengeScreen() {
     }
   };
 
+  const handleDotPress = (dateStr: string) => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedDate(dateStr);
+    setInspectorVisible(true);
+  };
+
   const renderDotMatrix = () => {
     if (!participant) return null;
     
@@ -227,56 +346,85 @@ export default function Vol3ChallengeScreen() {
     }
 
     return (
-      <View style={{ marginTop: 24 }}>
+      <View style={{ marginTop: 20 }}>
         <Text style={{ color: DotFuelColors.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>Dot Matrix</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {timeline.map((dateStr, i) => {
-            let color: string = DotFuelColors.surface;
-            let border: string = 'rgba(255,255,255,0.1)';
-            let shadowColor: string = 'transparent';
-            
             const isToday = dateStr === todayStr;
             const isFuture = dateStr > todayStr;
             const row = progressData[dateStr];
             
-            // Check if it's past and completed from DB, OR if it's today and all local tasks are done
-            const isCompleted = (row && (row.is_calculated_success || row.revival_applied)) || (isToday && completedCount === 5);
+            // Check past or today compliance (>= 80% tasks = at least 4 out of 5)
+            let complianceCount = 0;
+            let revivalApplied = false;
+            let successOverride = false;
 
-            if (isCompleted) {
-              // Completed
-              color = DotFuelColors.lime;
-              border = DotFuelColors.lime;
-              shadowColor = DotFuelColors.lime;
-            } else if (isToday) {
-              // Current uncompleted day (hollow with tinted inner)
-              color = DotFuelColors.limeLight;
-              border = DotFuelColors.lime;
-              shadowColor = DotFuelColors.lime;
-            } else if (isFuture) {
-              // Future
-              color = 'transparent';
-              border = 'rgba(255,255,255,0.1)';
-            } else {
-              // Past uncompleted
-              color = DotFuelColors.red;
-              border = DotFuelColors.red;
-              shadowColor = DotFuelColors.red;
+            if (isToday) {
+              complianceCount = completedCount;
+            } else if (row) {
+              if (row.clean_meals) complianceCount++;
+              if (row.workout) complianceCount++;
+              if (row.read_page) complianceCount++;
+              if (row.water_synced_override) complianceCount++;
+              if (row.custom_task_done) complianceCount++;
+              revivalApplied = row.revival_applied;
+              successOverride = row.is_calculated_success;
+            }
+
+            const isCompleted = complianceCount >= 4 || successOverride || revivalApplied;
+
+            if (isToday) {
+              return (
+                <PulsingTodayDot 
+                  key={dateStr}
+                  completed={isCompleted}
+                  onPress={() => handleDotPress(dateStr)}
+                />
+              );
+            }
+
+            let color: string = 'transparent';
+            let border: string = 'rgba(255,255,255,0.15)'; // Dimmed hollow placeholder
+
+            if (!isFuture) {
+              if (isCompleted) {
+                // Neon Green State
+                color = '#39FF14';
+                border = '#39FF14';
+              } else {
+                // Muted Red / Dark Border
+                color = 'rgba(255, 59, 59, 0.15)';
+                border = 'rgba(255, 59, 59, 0.4)';
+              }
             }
 
             return (
-              <Animated.View 
+              <Pressable
                 key={dateStr}
-                entering={FadeIn.delay(i * 15).duration(300)}
-                style={{
-                  width: 22, height: 22, borderRadius: 11,
-                  backgroundColor: color, borderWidth: 1, borderColor: border,
-                  shadowColor: shadowColor,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: shadowColor !== 'transparent' ? 0.9 : 0,
-                  shadowRadius: 8,
-                  elevation: shadowColor !== 'transparent' ? 6 : 0,
-                }}
-              />
+                onPress={() => handleDotPress(dateStr)}
+                style={({ pressed }) => [{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  backgroundColor: color,
+                  borderWidth: 1,
+                  borderColor: border,
+                  opacity: pressed ? 0.7 : 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }]}
+              >
+                {isCompleted && !isFuture && (
+                  <View style={{
+                    position: 'absolute',
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    backgroundColor: '#39FF14',
+                    opacity: 0.15,
+                  }} />
+                )}
+              </Pressable>
             );
           })}
         </View>
@@ -395,12 +543,10 @@ export default function Vol3ChallengeScreen() {
             marginTop: 20, backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
             padding: 20, borderWidth: 1, borderColor: 'rgba(194,240,0,0.1)'
           }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <View>
-                <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 4 }}>Time Remaining</Text>
-                <Text style={{ fontFamily: 'Inter', fontSize: 28, fontWeight: '900', color: DotFuelColors.white, letterSpacing: -1 }}>{daysLeft} Days</Text>
-              </View>
-              <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600' }}>Ends 30 Aug 2026</Text>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' }}>Time Remaining</Text>
+              <Text style={{ fontFamily: 'Inter', fontSize: 36, fontWeight: '900', color: DotFuelColors.white, marginTop: 4 }}>{daysLeft} Days</Text>
+              <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '600', marginTop: 4 }}>Ends 30 Aug 2026</Text>
             </View>
             {renderDotMatrix()}
           </View>
@@ -452,6 +598,8 @@ export default function Vol3ChallengeScreen() {
               <TextInput
                 value={customTaskName}
                 onChangeText={setCustomTaskName}
+                onBlur={saveCustomTaskTitle}
+                onSubmitEditing={saveCustomTaskTitle}
                 placeholder="My custom daily habit"
                 placeholderTextColor={DotFuelColors.muted}
                 style={{
@@ -575,6 +723,180 @@ export default function Vol3ChallengeScreen() {
         </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
+      {/* ── DAY INSPECTOR MODAL ── */}
+      <Modal
+        visible={inspectorVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setInspectorVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          justifyContent: 'flex-end',
+        }}>
+          <View style={{
+            backgroundColor: DotFuelColors.card,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 24,
+            borderWidth: 1,
+            borderColor: DotFuelColors.cardBorder,
+          }}>
+            {/* Grab handle */}
+            <View style={{
+              width: 40,
+              height: 4,
+              backgroundColor: DotFuelColors.surface,
+              borderRadius: 2,
+              alignSelf: 'center',
+              marginBottom: 16,
+            }} />
+
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <View>
+                <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white }}>
+                  📅 Day Details
+                </Text>
+                <Text style={{ fontSize: 13, color: DotFuelColors.muted, marginTop: 2 }}>
+                  {selectedDate ? new Date(selectedDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => setInspectorVisible(false)} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 20, color: DotFuelColors.muted, fontWeight: 'bold' }}>✕</Text>
+              </Pressable>
+            </View>
+
+            {/* Compliance Badge */}
+            {selectedDate && (() => {
+              const isToday = selectedDate === new Date().toISOString().split('T')[0];
+              const isFuture = selectedDate > new Date().toISOString().split('T')[0];
+              const row = progressData[selectedDate];
+              
+              let cleanMeals = false;
+              let workout = false;
+              let readPage = false;
+              let water = false;
+              let custom = false;
+              let revivalApplied = false;
+              let complianceCount = 0;
+
+              if (isToday) {
+                cleanMeals = tasks.cleanMeals;
+                workout = tasks.workout;
+                readPage = tasks.read;
+                water = tasks.water;
+                custom = tasks.custom;
+                complianceCount = completedCount;
+              } else if (row) {
+                cleanMeals = row.clean_meals;
+                workout = row.workout;
+                readPage = row.read_page;
+                water = row.water_synced_override;
+                custom = row.custom_task_done;
+                revivalApplied = row.revival_applied;
+                if (cleanMeals) complianceCount++;
+                if (workout) complianceCount++;
+                if (readPage) complianceCount++;
+                if (water) complianceCount++;
+                if (custom) complianceCount++;
+              }
+
+              const isCompleted = complianceCount >= 4 || (row && row.is_calculated_success) || revivalApplied;
+
+              return (
+                <View style={{ gap: 18 }}>
+                  {/* Status Box */}
+                  <View style={{
+                    backgroundColor: isFuture ? DotFuelColors.surface : isCompleted ? 'rgba(57,255,20,0.1)' : 'rgba(255,59,59,0.1)',
+                    borderRadius: 12,
+                    padding: 14,
+                    borderWidth: 1,
+                    borderColor: isFuture ? 'rgba(255,255,255,0.05)' : isCompleted ? '#39FF14' : DotFuelColors.red,
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{
+                      fontFamily: 'Inter',
+                      fontSize: 14,
+                      fontWeight: '800',
+                      color: isFuture ? DotFuelColors.muted : isCompleted ? '#39FF14' : DotFuelColors.red,
+                      textTransform: 'uppercase',
+                      letterSpacing: 1,
+                    }}>
+                      {isFuture ? '⚪ Future Timeline Slot' : revivalApplied ? '🎟️ Streak Revival Applied' : isCompleted ? '🟢 Target Completed (>= 80%)' : '🔴 Intake Insufficient (< 80%)'}
+                    </Text>
+                  </View>
+
+                  {/* Checklist Summary */}
+                  <View style={{ gap: 10, marginVertical: 8 }}>
+                    {[
+                      { label: 'All day clean meals', done: cleanMeals, emoji: '🥗' },
+                      { label: 'Daily workout / 10k steps', done: workout, emoji: '🏋️' },
+                      { label: 'Read a page', done: readPage, emoji: '📖' },
+                      { label: '4 ltrs of water', done: water, emoji: '💧' },
+                      { label: customTaskName || 'Custom daily habit', done: custom, emoji: '✨' },
+                    ].map((item, index) => (
+                      <View key={index} style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: DotFuelColors.surface,
+                        borderRadius: 12,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.02)',
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <Text style={{ fontSize: 18 }}>{item.emoji}</Text>
+                          <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '600', color: DotFuelColors.white }}>
+                            {item.label}
+                          </Text>
+                        </View>
+                        <View style={{
+                          backgroundColor: item.done ? 'rgba(57,255,20,0.15)' : 'rgba(255,255,255,0.05)',
+                          borderRadius: 8,
+                          paddingVertical: 4,
+                          paddingHorizontal: 8,
+                          borderWidth: 1,
+                          borderColor: item.done ? '#39FF14' : 'rgba(255,255,255,0.1)',
+                        }}>
+                          <Text style={{
+                            fontSize: 10,
+                            fontWeight: '800',
+                            color: item.done ? '#39FF14' : DotFuelColors.muted,
+                            textTransform: 'uppercase',
+                          }}>
+                            {item.done ? 'Done' : 'Missed'}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Close button */}
+                  <Pressable
+                    onPress={() => setInspectorVisible(false)}
+                    style={({ pressed }) => ({
+                      backgroundColor: '#1E49CF',
+                      borderRadius: 14,
+                      paddingVertical: 14,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: pressed ? 0.88 : 1,
+                      marginTop: 8,
+                    })}
+                  >
+                    <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '800', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                      CLOSE INSPECTOR
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

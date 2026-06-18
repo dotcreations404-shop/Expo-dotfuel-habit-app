@@ -38,6 +38,7 @@ export interface DailyLog {
   water_ml?: number;
   fuel_score?: number;
   burned_calories?: number;
+  active_calories?: number;
   created_at?: string;
 }
 
@@ -163,6 +164,7 @@ export interface Vol3DailyProgress {
   read_page: boolean;
   water_synced: boolean;
   custom_task: boolean;
+  custom_task_done: boolean;
   is_calculated_success: boolean;
   revival_applied: boolean;
   water_synced_override: boolean;
