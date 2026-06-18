@@ -26,8 +26,34 @@ export default function Root({ children }: { children: React.ReactNode }) {
         */}
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: `
-          body { background-color: #0A0A0A; }
-          #root { background-color: #0A0A0A; }
+          * {
+            box-sizing: border-box;
+          }
+          html {
+            background-color: #0A0A0A;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+          }
+          body {
+            background-color: #0A0A0A;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+          }
+          #root {
+            background-color: #0A0A0A;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+          }
         ` }} />
 
         {headNodes}
