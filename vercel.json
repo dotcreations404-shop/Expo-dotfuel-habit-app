@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npx expo export --platform web",
-  "outputDirectory": "dist/client",
+  "buildCommand": "cd apps/mobile && npx expo export --platform web",
+  "outputDirectory": "apps/mobile/dist",
   "installCommand": "npm install",
   "framework": null,
   "rewrites": [
