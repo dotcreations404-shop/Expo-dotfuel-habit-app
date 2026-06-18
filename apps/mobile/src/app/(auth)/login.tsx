@@ -3,7 +3,7 @@
  * Pulsing lime dot + Google OAuth, Apple Sign In (iOS), Email OTP.
  */
 import { useEffect, useState } from 'react';
-import { View, Pressable, Alert, ScrollView, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { View, Pressable, Alert, ScrollView, KeyboardAvoidingView, StyleSheet, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -80,10 +80,10 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black, width: '100%', height: '100%' }} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView style={{ flex: 1, width: '100%', height: '100%' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          style={{ flex: 1, backgroundColor: DotFuelColors.black }}
+          style={{ flex: 1, width: '100%', height: '100%', backgroundColor: DotFuelColors.black }}
           contentContainerStyle={{ flexGrow: 1, paddingTop: 16 }}
           keyboardShouldPersistTaps="handled"
         >

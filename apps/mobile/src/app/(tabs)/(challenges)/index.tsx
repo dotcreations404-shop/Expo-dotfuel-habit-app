@@ -60,7 +60,7 @@ const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: 
 
 export default function ChallengesScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [checkingParticipant, setCheckingParticipant] = useState(true);
@@ -99,12 +99,14 @@ export default function ChallengesScreen() {
   }, []);
 
   useEffect(() => {
-    if (user) {
-      loadParticipant();
-    } else {
-      setCheckingParticipant(false);
+    if (!authLoading) {
+      if (user) {
+        loadParticipant();
+      } else {
+        setCheckingParticipant(false);
+      }
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (participant && participant.status === 'active') {
@@ -632,7 +634,7 @@ export default function ChallengesScreen() {
                     opacity: pressed ? 0.9 : 1,
                   })}
                 >
-                  <View style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 4, backgroundColor: DotFuelColors.green, borderRadius: 2 }} />
+                  <View style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 4, backgroundColor: DotFuelColors.lime, borderRadius: 2 }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingLeft: 8 }}>
                     <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,100,150,0.15)', alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 28 }}>🤝</Text>
@@ -841,7 +843,7 @@ export default function ChallengesScreen() {
           >
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0, width: 4,
-              backgroundColor: DotFuelColors.green, borderRadius: 2,
+              backgroundColor: DotFuelColors.lime, borderRadius: 2,
             }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, paddingLeft: 8 }}>
               <View style={{

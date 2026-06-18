@@ -60,7 +60,7 @@ const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: 
 
 export default function Vol3ChallengeScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [loading, setLoading] = useState(true);
@@ -103,10 +103,14 @@ export default function Vol3ChallengeScreen() {
   }, []);
 
   useEffect(() => {
-    if (user) {
-      loadInitialData();
+    if (!authLoading) {
+      if (user) {
+        loadInitialData();
+      } else {
+        setLoading(false);
+      }
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   useEffect(() => {
     if (participant) {
