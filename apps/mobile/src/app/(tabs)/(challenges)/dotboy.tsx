@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/contexts/auth-context';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
+import { getApiUrl } from '@/lib/api-helper';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -37,7 +38,7 @@ export default function DotBoyScreen() {
     setStreaming(true);
 
     try {
-      const response = await fetch('/api/dotboy', {
+      const response = await fetch(getApiUrl('/api/dotboy'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

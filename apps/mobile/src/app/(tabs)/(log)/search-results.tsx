@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
+import { getApiUrl } from '@/lib/api-helper';
 
 interface FoodResult {
   food_id: string;
@@ -56,7 +57,7 @@ export default function SearchResultsScreen() {
     if (!q) return;
     (async () => {
       try {
-        const res = await fetch(`/api/fatsecret?action=search&q=${encodeURIComponent(q)}`);
+        const res = await fetch(getApiUrl(`/api/fatsecret?action=search&q=${encodeURIComponent(q)}`));
         const data = await res.json();
         const foods = data?.foods_search?.results?.food || data?.foods?.food || [];
         setResults(Array.isArray(foods) ? foods : [foods]);

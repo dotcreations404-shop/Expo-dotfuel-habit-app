@@ -8,6 +8,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { DotFuelColors, Spacing } from '@/constants/colors';
+import { getApiUrl } from '@/lib/api-helper';
 
 export default function BarcodeScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -48,7 +49,7 @@ export default function BarcodeScannerScreen() {
     if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     try {
-      const res = await fetch(`/api/fatsecret?action=barcode&barcode=${data}`);
+      const res = await fetch(getApiUrl(`/api/fatsecret?action=barcode&barcode=${data}`));
       const result = await res.json();
 
       if (result?.food_id) {
