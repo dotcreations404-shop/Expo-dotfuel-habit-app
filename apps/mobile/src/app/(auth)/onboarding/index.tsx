@@ -8,7 +8,7 @@
  *   5: Results — calculated target, macros, "How We Calculated This" breakdown, 2-week calibration tip
  */
 import { useState, useCallback, useEffect } from 'react';
-import { View, ScrollView, Pressable, Alert, KeyboardAvoidingView, Modal, Platform } from 'react-native';
+import { View, ScrollView, Pressable, Alert, KeyboardAvoidingView, Modal, Platform, TextInput } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,10 +32,7 @@ export default function Onboarding() {
   const { user, profile, needsOnboarding, setProfileDirect } = useAuth();
   const router = useRouter();
 
-  // ── Collapsible state for info panels ─────────────────────────────────────
-  const [showBmrPreview, setShowBmrPreview] = useState(true);
-  const [showCalcBreakdown, setShowCalcBreakdown] = useState(true);
-  const [showCalibrationTip, setShowCalibrationTip] = useState(true);
+
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [name, setName] = useState('');
@@ -432,17 +429,17 @@ export default function Onboarding() {
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: DotFuelColors.card, borderRadius: 14,
                   borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-                  paddingHorizontal: 16, paddingVertical: 14,
+                  paddingHorizontal: 16, height: 56,
                 }}>
-                  <Input
+                  <TextInput
                     value={weight}
                     onChangeText={setWeight}
                     keyboardType="decimal-pad"
                     placeholder="70"
+                    placeholderTextColor={DotFuelColors.muted}
                     style={{
                       flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
-                      color: DotFuelColors.white, backgroundColor: 'transparent',
-                      borderWidth: 0, padding: 0, margin: 0,
+                      color: DotFuelColors.white, padding: 0,
                     }}
                     editable={!saveMutation.isPending}
                   />
@@ -455,17 +452,17 @@ export default function Onboarding() {
                   flexDirection: 'row', alignItems: 'center',
                   backgroundColor: DotFuelColors.card, borderRadius: 14,
                   borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-                  paddingHorizontal: 16, paddingVertical: 14,
+                  paddingHorizontal: 16, height: 56,
                 }}>
-                  <Input
+                  <TextInput
                     value={height}
                     onChangeText={setHeight}
                     keyboardType="decimal-pad"
                     placeholder="169"
+                    placeholderTextColor={DotFuelColors.muted}
                     style={{
                       flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
-                      color: DotFuelColors.white, backgroundColor: 'transparent',
-                      borderWidth: 0, padding: 0, margin: 0,
+                      color: DotFuelColors.white, padding: 0,
                     }}
                     editable={!saveMutation.isPending}
                   />
@@ -477,8 +474,7 @@ export default function Onboarding() {
             {/* BMR Preview Card */}
             {weight && height && (
               <Animated.View entering={FadeIn.duration(300)}>
-                <Pressable
-                  onPress={() => setShowBmrPreview(!showBmrPreview)}
+                <View
                   style={{
                     backgroundColor: DotFuelColors.card, borderRadius: 16,
                     borderWidth: 1, borderColor: DotFuelColors.cardBorder,
@@ -486,45 +482,36 @@ export default function Onboarding() {
                   }}
                 >
                   {/* Header */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showBmrPreview ? 12 : 0 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>🧬</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
-                        BMR PREVIEW
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
-                      {showBmrPreview ? '▲' : '▼'}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <Text style={{ fontSize: 16 }}>🧬</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                      BMR PREVIEW
                     </Text>
                   </View>
 
-                  {showBmrPreview && (
-                    <View>
-                      {/* Formula */}
-                      <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 20, marginBottom: 12 }}>
-                        {bmrFormula} = {Math.round(bmr)}
-                      </Text>
+                  {/* Formula */}
+                  <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 20, marginBottom: 12 }}>
+                    {bmrFormula} = {Math.round(bmr)}
+                  </Text>
 
-                      {/* Result */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                        <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500' }}>
-                          Your base calorie burn at rest
-                        </Text>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Text style={{
-                            fontFamily: 'Inter', fontSize: 32, fontWeight: '900',
-                            color: DotFuelColors.lime, letterSpacing: -1,
-                          }}>
-                            {Math.round(bmr).toLocaleString()}
-                          </Text>
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>
-                            KCAL/DAY
-                          </Text>
-                        </View>
-                      </View>
+                  {/* Result */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500' }}>
+                      Your base calorie burn at rest
+                    </Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{
+                        fontFamily: 'Inter', fontSize: 32, fontWeight: '900',
+                        color: DotFuelColors.lime, letterSpacing: -1,
+                      }}>
+                        {Math.round(bmr).toLocaleString()}
+                      </Text>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>
+                        KCAL/DAY
+                      </Text>
                     </View>
-                  )}
-                </Pressable>
+                  </View>
+                </View>
               </Animated.View>
             )}
           </Animated.View>
@@ -741,125 +728,109 @@ export default function Onboarding() {
               ))}
             </View>
 
-            {/* How We Calculated This — Collapsible */}
-            <Pressable
-              onPress={() => setShowCalcBreakdown(!showCalcBreakdown)}
+            {/* How We Calculated This */}
+            <View
               style={{
                 backgroundColor: DotFuelColors.card, borderRadius: 16,
                 borderWidth: 1, borderColor: DotFuelColors.cardBorder,
                 padding: 18,
               }}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showCalcBreakdown ? 16 : 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 16 }}>🧬</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
-                    HOW WE CALCULATED THIS
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
-                  {showCalcBreakdown ? '▲' : '▼'}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <Text style={{ fontSize: 16 }}>🧬</Text>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                  HOW WE CALCULATED THIS
                 </Text>
               </View>
 
-              {showCalcBreakdown && (
-                <View style={{ gap: 16 }}>
-                  {/* BMR Row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>🧬</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
-                        BMR (Mifflin-St Jeor)
-                      </Text>
-                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
-                        {bmrFormula}
-                      </Text>
-                    </View>
-                    <Text style={{
-                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
-                      color: DotFuelColors.lime,
-                    }}>
-                      {Math.round(bmr).toLocaleString()} kcal
+              <View style={{ gap: 16 }}>
+                {/* BMR Row */}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 20, marginRight: 12 }}>🧬</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                      BMR (Mifflin-St Jeor)
+                    </Text>
+                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                      {bmrFormula}
                     </Text>
                   </View>
-
-                  {/* Arrow */}
-                  <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
-
-                  {/* TDEE Row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>🏃</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
-                        Activity Multiplier
-                      </Text>
-                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
-                        BMR × {actMult} ({activityLabel} · {activityDesc})
-                      </Text>
-                    </View>
-                    <Text style={{
-                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
-                      color: DotFuelColors.lime,
-                    }}>
-                      {tdee.toLocaleString()} kcal
-                    </Text>
-                  </View>
-
-                  {/* Arrow */}
-                  <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
-
-                  {/* Goal Adjustment Row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>⚖️</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
-                        Goal Adjustment
-                      </Text>
-                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
-                        {goalAdjustmentLabel}
-                      </Text>
-                    </View>
-                    <Text style={{
-                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
-                      color: goalAdjustment === 0 ? DotFuelColors.muted : goalAdjustment < 0 ? DotFuelColors.orange : DotFuelColors.lime,
-                    }}>
-                      {goalAdjustment === 0 ? '0' : goalAdjustment > 0 ? `+${goalAdjustment}` : `${goalAdjustment}`} kcal
-                    </Text>
-                  </View>
+                  <Text style={{
+                    fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                    color: DotFuelColors.lime,
+                  }}>
+                    {Math.round(bmr).toLocaleString()} kcal
+                  </Text>
                 </View>
-              )}
-            </Pressable>
+
+                {/* Arrow */}
+                <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
+
+                {/* TDEE Row */}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 20, marginRight: 12 }}>🏃</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                      Activity Multiplier
+                    </Text>
+                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                      BMR × {actMult} ({activityLabel} · {activityDesc})
+                    </Text>
+                  </View>
+                  <Text style={{
+                    fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                    color: DotFuelColors.lime,
+                  }}>
+                    {tdee.toLocaleString()} kcal
+                  </Text>
+                </View>
+
+                {/* Arrow */}
+                <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
+
+                {/* Goal Adjustment Row */}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 20, marginRight: 12 }}>⚖️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                      Goal Adjustment
+                    </Text>
+                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                      {goalAdjustmentLabel}
+                    </Text>
+                  </View>
+                  <Text style={{
+                    fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                    color: goalAdjustment === 0 ? DotFuelColors.muted : goalAdjustment < 0 ? DotFuelColors.orange : DotFuelColors.lime,
+                  }}>
+                    {goalAdjustment === 0 ? '0' : goalAdjustment > 0 ? `+${goalAdjustment}` : `${goalAdjustment}`} kcal
+                  </Text>
+                </View>
+              </View>
+            </View>
 
             {/* 2-Week Calibration Tip */}
-            <Pressable
-              onPress={() => setShowCalibrationTip(!showCalibrationTip)}
+            <View
               style={{
                 backgroundColor: DotFuelColors.card, borderRadius: 16,
                 borderWidth: 1, borderColor: DotFuelColors.cardBorder,
                 padding: 18,
               }}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showCalibrationTip ? 10 : 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 16 }}>📅</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
-                    2-WEEK CALIBRATION TIP
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
-                  {showCalibrationTip ? '▲' : '▼'}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Text style={{ fontSize: 16 }}>📅</Text>
+                <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                  2-WEEK CALIBRATION TIP
                 </Text>
               </View>
 
-              {showCalibrationTip && (
-                <Text style={{
-                  fontSize: 14, color: DotFuelColors.text, fontWeight: '500',
-                  lineHeight: 22,
-                }}>
-                  Eat at this target for 14 days and weigh yourself daily. If your weight stays stable, this is your true maintenance. We'll help you adjust if needed.
-                </Text>
-              )}
-            </Pressable>
+              <Text style={{
+                fontSize: 14, color: DotFuelColors.text, fontWeight: '500',
+                lineHeight: 22,
+              }}>
+                Eat at this target for 14 days and weigh yourself daily. If your weight stays stable, this is your true maintenance. We'll help you adjust if needed.
+              </Text>
+            </View>
           </Animated.View>
         );
     }
