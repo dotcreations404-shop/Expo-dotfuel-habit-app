@@ -37,9 +37,7 @@ function parseDescription(desc: string): { cal: number; fat: number; carbs: numb
 }
 
 const LOG_METHODS = [
-  { id: 'search', emoji: '🔍', label: 'Search Food', desc: 'FatSecret database', color: DotFuelColors.lime },
   { id: 'custom_meal', emoji: '🍳', label: 'Custom Meal', desc: 'Log manually', color: '#A855F7' },
-  { id: 'photo', emoji: '📸', label: 'Photo AI', desc: 'Snap & estimate', color: DotFuelColors.blue },
   { id: 'barcode', emoji: '📱', label: 'Barcode', desc: 'Scan product', color: DotFuelColors.green },
   { id: 'voice', emoji: '🎙️', label: 'Voice', desc: 'Say what you ate', color: DotFuelColors.orange },
 ];
@@ -55,114 +53,13 @@ const QUICK_FOODS = [
   { emoji: '🥜', name: 'Peanuts (30g)', cal: 170, p: 7, c: 5, f: 14 },
 ];
 
-const COMMON_FOODS_LOCAL: Record<string, any[]> = {
-  egg: [
-    { food_id: 'egg_001', food_name: 'Boiled Egg', food_description: 'Per 1 large egg - Calories: 78 | Fat: 5.3 | Carbs: 0.6 | Protein: 6.3' },
-    { food_id: 'egg_002', food_name: 'Fried Egg', food_description: 'Per 1 large egg - Calories: 90 | Fat: 7.0 | Carbs: 0.4 | Protein: 6.3' },
-    { food_id: 'egg_003', food_name: 'Scrambled Egg', food_description: 'Per 1 large egg - Calories: 91 | Fat: 7.0 | Carbs: 1.1 | Protein: 6.8' },
-    { food_id: 'egg_004', food_name: 'Egg White', food_description: 'Per 1 large egg white - Calories: 17 | Fat: 0.1 | Carbs: 0.4 | Protein: 3.6' },
-  ],
-  eggs: [
-    { food_id: 'egg_001', food_name: 'Boiled Egg', food_description: 'Per 1 large egg - Calories: 78 | Fat: 5.3 | Carbs: 0.6 | Protein: 6.3' },
-    { food_id: 'egg_002', food_name: 'Fried Egg', food_description: 'Per 1 large egg - Calories: 90 | Fat: 7.0 | Carbs: 0.4 | Protein: 6.3' },
-    { food_id: 'egg_003', food_name: 'Scrambled Egg', food_description: 'Per 1 large egg - Calories: 91 | Fat: 7.0 | Carbs: 1.1 | Protein: 6.8' },
-  ],
-  banana: [
-    { food_id: 'banana_001', food_name: 'Banana', food_description: 'Per 1 medium banana - Calories: 105 | Fat: 0.4 | Carbs: 27.0 | Protein: 1.3' }
-  ],
-  chicken: [
-    { food_id: 'chicken_001', food_name: 'Chicken Breast (Skinless)', food_description: 'Per 100g - Calories: 165 | Fat: 3.6 | Carbs: 0.0 | Protein: 31.0' },
-    { food_id: 'chicken_002', food_name: 'Grilled Chicken Breast', food_description: 'Per 1 breast - Calories: 150 | Fat: 3.0 | Carbs: 0.0 | Protein: 29.0' }
-  ],
-  protein: [
-    { food_id: 'protein_001', food_name: 'Whey Protein Powder', food_description: 'Per 1 scoop (30g) - Calories: 120 | Fat: 1.5 | Carbs: 3.0 | Protein: 24.0' }
-  ],
-  milk: [
-    { food_id: 'milk_001', food_name: 'Whole Milk', food_description: 'Per 1 cup (244g) - Calories: 149 | Fat: 8.0 | Carbs: 12.0 | Protein: 8.0' },
-    { food_id: 'milk_002', food_name: 'Skim Milk (Nonfat)', food_description: 'Per 1 cup (245g) - Calories: 83 | Fat: 0.2 | Carbs: 12.0 | Protein: 8.3' }
-  ],
-  oats: [
-    { food_id: 'oats_001', food_name: 'Rolled Oats (Dry)', food_description: 'Per 0.5 cup (40g) - Calories: 150 | Fat: 3.0 | Carbs: 27.0 | Protein: 5.0' },
-    { food_id: 'oats_002', food_name: 'Oatmeal (Cooked in Water)', food_description: 'Per 1 cup - Calories: 166 | Fat: 4.0 | Carbs: 28.0 | Protein: 6.0' }
-  ],
-  rice: [
-    { food_id: 'rice_001', food_name: 'White Rice (Cooked)', food_description: 'Per 1 cup - Calories: 205 | Fat: 0.4 | Carbs: 44.5 | Protein: 4.2' },
-    { food_id: 'rice_002', food_name: 'Brown Rice (Cooked)', food_description: 'Per 1 cup - Calories: 218 | Fat: 1.6 | Carbs: 45.8 | Protein: 4.5' }
-  ],
-  apple: [
-    { food_id: 'apple_001', food_name: 'Apple', food_description: 'Per 1 medium apple - Calories: 95 | Fat: 0.3 | Carbs: 25.0 | Protein: 0.5' }
-  ],
-  avocado: [
-    { food_id: 'avocado_001', food_name: 'Avocado', food_description: 'Per 1 medium avocado - Calories: 240 | Fat: 22.0 | Carbs: 12.0 | Protein: 3.0' }
-  ]
-};
+
 
 export default function LogScreen() {
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
   const { scannedFood } = useLocalSearchParams<{ scannedFood?: string }>();
-  const searchInputRef = useRef<TextInput>(null);
-  const webFileInputRef = useRef<any>(null);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const clientCacheRef = useRef<Record<string, any[]>>({});
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  useEffect(() => {
-    const query = debouncedQuery.trim().toLowerCase();
-    if (!query || query.length < 2) {
-      setSearchResults([]);
-      setIsSearching(false);
-      return;
-    }
-
-    // 1. Check local seed dictionary first
-    if (COMMON_FOODS_LOCAL[query]) {
-      setSearchResults(COMMON_FOODS_LOCAL[query]);
-      setIsSearching(false);
-      return;
-    }
-
-    // 2. Check client-side session cache
-    if (clientCacheRef.current[query]) {
-      setSearchResults(clientCacheRef.current[query]);
-      setIsSearching(false);
-      return;
-    }
-
-    (async () => {
-      setIsSearching(true);
-      try {
-        const res = await fetch(getApiUrl(`/api/fatsecret?action=search&q=${encodeURIComponent(debouncedQuery)}`));
-        if (res.ok) {
-          const data = await res.json();
-          const foods = data?.foods_search?.results?.food || data?.foods?.food || [];
-          const foodList = Array.isArray(foods) ? foods : [foods];
-          
-          clientCacheRef.current[query] = foodList;
-          setSearchResults(foodList);
-        } else {
-          setSearchResults([]);
-        }
-      } catch (err) {
-        console.error('Live search error:', err);
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    })();
-  }, [debouncedQuery]);
-
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customCal, setCustomCal] = useState('');
@@ -340,6 +237,8 @@ export default function LogScreen() {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
+      queryClient.invalidateQueries({ queryKey: ['week-logs'] });
+      router.push('/(tabs)/(home)');
     },
     onError: (err) => {
       Alert.alert('Error', err.message);
@@ -373,6 +272,8 @@ export default function LogScreen() {
       setCustomCal('');
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
+      queryClient.invalidateQueries({ queryKey: ['week-logs'] });
+      router.push('/(tabs)/(home)');
     },
     onError: (err) => {
       Alert.alert('Error', err.message);
@@ -405,9 +306,10 @@ export default function LogScreen() {
     onSuccess: () => {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowResultsModal(false);
-      setSearchQuery('');
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
+      queryClient.invalidateQueries({ queryKey: ['week-logs'] });
+      router.push('/(tabs)/(home)');
     },
     onError: (err) => {
       Alert.alert('Error', err.message);
@@ -502,92 +404,6 @@ export default function LogScreen() {
     }
   };
 
-  // ── Live Search AI Estimate ────────────────────────────────────────────────
-  const handleLiveSearchAiEstimate = async () => {
-    if (!searchQuery.trim()) return;
-
-    setIsAiEstimating(true);
-
-    try {
-      const res = await fetch(getApiUrl('/api/ai-estimate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ food: searchQuery })
-      });
-
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data = await res.json();
-
-      setEstimatedFood({
-        name: data.name || searchQuery,
-        emoji: data.emoji || '🤖',
-        calories: data.calories || 0,
-        protein_g: data.protein_g || 0,
-        carbs_g: data.carbs_g || 0,
-        fat_g: data.fat_g || 0,
-        fiber_g: data.fiber_g || 0,
-        serving_size: data.serving_size || '1 serving',
-        source: 'ai',
-        meal_time: getMealType(),
-      });
-      setShowResultsModal(true);
-    } catch (err: any) {
-      Alert.alert('AI Estimation Failed', err.message || 'Failed to estimate macros. Please try again.');
-    } finally {
-      setIsAiEstimating(false);
-    }
-  };
-
-  // ── Photo selector and macro estimator ─────────────────────────────────────
-  const handleWebFileChange = async (e: any) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsAiEstimating(true);
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Data = (reader.result as string).split(',')[1];
-        try {
-          const res = await fetch(getApiUrl('/api/ai-estimate'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imageBase64: base64Data,
-              mediaType: file.type
-            })
-          });
-
-          if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-          const data = await res.json();
-
-          setEstimatedFood({
-            name: data.name || 'Photo Estimate',
-            emoji: data.emoji || '📸',
-            calories: data.calories || 0,
-            protein_g: data.protein_g || 0,
-            carbs_g: data.carbs_g || 0,
-            fat_g: data.fat_g || 0,
-            fiber_g: data.fiber_g || 0,
-            serving_size: data.serving_size || '1 serving',
-            source: 'photo',
-            meal_time: getMealType(),
-          });
-          setShowResultsModal(true);
-        } catch (err: any) {
-          Alert.alert('AI Estimation Failed', err.message || 'Failed to analyze photo. Please try again.');
-        } finally {
-          setIsAiEstimating(false);
-        }
-      };
-
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      Alert.alert('File Error', 'Failed to read the file.');
-      setIsAiEstimating(false);
-    }
-  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
@@ -616,186 +432,7 @@ export default function LogScreen() {
           </Text>
         </View>
 
-        {/* Search bar */}
-        <View style={{
-          marginHorizontal: Spacing['2xl'], marginBottom: Spacing.lg,
-          position: 'relative',
-        }}>
-          <TextInput
-            ref={searchInputRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={() => {
-              if (searchQuery.trim()) {
-                router.push({ pathname: '/(tabs)/(log)/search-results', params: { q: searchQuery } });
-              }
-            }}
-            placeholder="Search foods..."
-            placeholderTextColor={DotFuelColors.muted}
-            returnKeyType="search"
-            style={{
-              backgroundColor: DotFuelColors.card,
-              borderWidth: 1, borderColor: DotFuelColors.surfaceBorder,
-              borderRadius: Radius.lg, paddingVertical: 13, paddingHorizontal: 16,
-              paddingRight: 48,
-              color: DotFuelColors.white, fontFamily: 'Inter', fontSize: 14,
-            }}
-          />
-          <Pressable
-            id="food-search-button"
-            onPress={() => {
-              if (searchQuery.trim()) {
-                router.push({ pathname: '/(tabs)/(log)/search-results', params: { q: searchQuery } });
-              }
-            }}
-            style={({ pressed }) => ({
-              position: 'absolute',
-              right: 16,
-              top: 13,
-              opacity: pressed ? 0.6 : 0.8,
-            })}
-          >
-            <Text style={{ fontSize: 16 }}>🔍</Text>
-          </Pressable>
-        </View>
 
-        {/* Hidden File Input for Photo AI */}
-        {Platform.OS === 'web' && (
-          <input
-            type="file"
-            ref={webFileInputRef}
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handleWebFileChange}
-          />
-        )}
-
-        {searchQuery.trim().length >= 2 ? (
-          <View style={{ marginHorizontal: Spacing['2xl'], marginBottom: Spacing.xl }}>
-            <Text style={{
-              fontSize: 12, fontWeight: '800', color: DotFuelColors.muted,
-              textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.sm,
-            }}>
-              Database Results
-            </Text>
-
-            <View style={{
-              backgroundColor: DotFuelColors.card,
-              borderWidth: 1, borderColor: DotFuelColors.surfaceBorder,
-              borderRadius: Radius.xl, overflow: 'hidden',
-            }}>
-              {isSearching ? (
-                <View style={{ padding: 24, alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator color={DotFuelColors.lime} />
-                  <Text style={{ color: DotFuelColors.muted, fontSize: 12, fontWeight: '500' }}>
-                    Searching database...
-                  </Text>
-                </View>
-              ) : (
-                <View>
-                  {searchResults.length === 0 ? (
-                    <View style={{ padding: 20, alignItems: 'center' }}>
-                      <Text style={{ color: DotFuelColors.muted, fontSize: 13, fontWeight: '500' }}>
-                        No exact match found in database
-                      </Text>
-                    </View>
-                  ) : (
-                    searchResults.map((item, idx) => {
-                      const { cal, fat, carbs, protein, serving } = parseDescription(item.food_description);
-                      return (
-                        <Pressable
-                          key={item.food_id || idx}
-                          onPress={() => {
-                            if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
-                            setEstimatedFood({
-                              name: item.food_name,
-                              emoji: '🍽️',
-                              calories: Math.round(cal),
-                              protein_g: Math.round(protein),
-                              carbs_g: Math.round(carbs),
-                              fat_g: Math.round(fat),
-                              fiber_g: 0,
-                              serving_size: serving || '1 serving',
-                              source: 'fatsecret',
-                              meal_time: getMealType(),
-                            });
-                            setShowResultsModal(true);
-                          }}
-                          style={({ pressed }) => ({
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            paddingVertical: 14,
-                            paddingHorizontal: 16,
-                            borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0,
-                            borderBottomColor: DotFuelColors.surfaceBorder,
-                            backgroundColor: pressed ? 'rgba(255,255,255,0.02)' : 'transparent',
-                          })}
-                        >
-                          <View style={{ flex: 1, marginRight: 12 }}>
-                            <Text style={{
-                              fontFamily: 'Inter', fontSize: 14, fontWeight: '700',
-                              color: DotFuelColors.white, marginBottom: 2,
-                            }} numberOfLines={1}>
-                              {item.food_name}
-                            </Text>
-                            <Text style={{ fontSize: 11, color: DotFuelColors.muted }} numberOfLines={1}>
-                              {serving || '1 serving'}
-                            </Text>
-                          </View>
-                          
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={{ backgroundColor: 'rgba(194,240,0,0.1)', paddingVertical: 3, paddingHorizontal: 6, borderRadius: 6 }}>
-                              <Text style={{ color: DotFuelColors.lime, fontSize: 11, fontWeight: '800' }}>
-                                {Math.round(cal)}
-                              </Text>
-                            </View>
-                            <View style={{ backgroundColor: 'rgba(255,140,0,0.1)', paddingVertical: 3, paddingHorizontal: 6, borderRadius: 6 }}>
-                              <Text style={{ color: DotFuelColors.orange, fontSize: 11, fontWeight: '800' }}>
-                                {Math.round(protein)}g
-                              </Text>
-                            </View>
-                          </View>
-                        </Pressable>
-                      );
-                    })
-                  )}
-
-                  {/* AI Estimate Shortcut */}
-                  <Pressable
-                    onPress={() => {
-                      if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
-                      handleLiveSearchAiEstimate();
-                    }}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: pressed ? 'rgba(194,240,0,0.15)' : 'rgba(194,240,0,0.06)',
-                      paddingVertical: 14,
-                      paddingHorizontal: 16,
-                      borderTopWidth: 1,
-                      borderTopColor: DotFuelColors.surfaceBorder,
-                    })}
-                  >
-                    <Text style={{ fontSize: 18, marginRight: 10 }}>🤖</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{
-                        fontFamily: 'Inter', fontSize: 13, fontWeight: '800',
-                        color: DotFuelColors.lime, textTransform: 'uppercase', letterSpacing: 0.5,
-                      }}>
-                        Estimate "{searchQuery}" with AI
-                      </Text>
-                      <Text style={{ fontSize: 10, color: DotFuelColors.muted, marginTop: 1 }}>
-                        Instant macro estimation using Claude
-                      </Text>
-                    </View>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          </View>
-        ) : (
-          <>
             {/* Method cards */}
             <View style={{
               flexDirection: 'row', flexWrap: 'wrap',
@@ -806,9 +443,7 @@ export default function LogScreen() {
                   key={method.id}
                   onPress={() => {
                     if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
-                    if (method.id === 'search') {
-                      searchInputRef.current?.focus();
-                    } else if (method.id === 'custom_meal') {
+                    if (method.id === 'custom_meal') {
                       setEstimatedFood({
                         name: '',
                         emoji: '🍳',
@@ -822,12 +457,6 @@ export default function LogScreen() {
                         meal_time: getMealType(),
                       });
                       setShowResultsModal(true);
-                    } else if (method.id === 'photo') {
-                      if (Platform.OS === 'web') {
-                        webFileInputRef.current?.click();
-                      } else {
-                        Alert.alert('Not Supported', 'Photo capture is only supported in web browser.');
-                      }
                     } else if (method.id === 'barcode') {
                       router.push('/(tabs)/(log)/barcode-scanner');
                     } else if (method.id === 'voice') {
@@ -839,12 +468,8 @@ export default function LogScreen() {
                     width: '48%', flexGrow: 1,
                     backgroundColor: DotFuelColors.card,
                     borderWidth: 1.5,
-                    borderColor: method.id === 'search'
-                      ? 'rgba(194,240,0,0.2)'
-                      : method.id === 'custom_meal'
+                    borderColor: method.id === 'custom_meal'
                       ? 'rgba(168,85,247,0.3)'
-                      : method.id === 'photo'
-                      ? 'rgba(255,140,0,0.3)'
                       : method.id === 'voice'
                       ? 'rgba(0,232,122,0.3)'
                       : 'rgba(255,255,255,0.1)',
@@ -974,8 +599,6 @@ export default function LogScreen() {
                 ))}
               </View>
             </View>
-          </>
-        )}
       </ScrollView>
 
       {/* Loading Overlay */}

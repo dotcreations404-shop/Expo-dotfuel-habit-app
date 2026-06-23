@@ -1,6 +1,11 @@
 /**
- * Onboarding flow — 5 steps: welcome → personal info → activity → fuel mode → results.
- * Dynamic route: /(auth)/onboarding/[step].tsx
+ * Onboarding flow — 6 steps:
+ *   0: Welcome
+ *   1: About You (name, age, sex)
+ *   2: Body Metrics (weight, height) + live BMR preview with formula
+ *   3: Activity Level (dedicated page with multiplier badges)
+ *   4: Goal selection (fuel mode)
+ *   5: Results — calculated target, macros, "How We Calculated This" breakdown, 2-week calibration tip
  */
 import { useState, useCallback, useEffect } from 'react';
 import { View, ScrollView, Pressable, Alert, KeyboardAvoidingView, Modal, Platform } from 'react-native';
@@ -20,12 +25,19 @@ import type { FuelMode, UserProfile } from '@/lib/types';
 
 import { useRouter } from 'expo-router';
 
+const TOTAL_STEPS = 6; // 0..5
+
 export default function Onboarding() {
   const [step, setStep] = useState(0);
   const { user, profile, needsOnboarding, setProfileDirect } = useAuth();
   const router = useRouter();
 
-  // ── Form state (persisted across steps via useState) ───────────────────────
+  // ── Collapsible state for info panels ─────────────────────────────────────
+  const [showBmrPreview, setShowBmrPreview] = useState(true);
+  const [showCalcBreakdown, setShowCalcBreakdown] = useState(true);
+  const [showCalibrationTip, setShowCalibrationTip] = useState(true);
+
+  // ── Form state ────────────────────────────────────────────────────────────
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [sex, setSex] = useState<'male' | 'female'>('male');
@@ -36,17 +48,23 @@ export default function Onboarding() {
 
   const next = () => {
     if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (step < 5) {
+    if (step < TOTAL_STEPS - 1) {
       setStep(step + 1);
     }
   };
 
-  // ── Calculate metrics ──────────────────────────────────────────────────────
+  const back = () => {
+    if (step > 0) {
+      if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setStep(step - 1);
+    }
+  };
+
+  // ── Calculated metrics ────────────────────────────────────────────────────
   const weightKg = parseFloat(weight) || 70;
   const heightCm = parseFloat(height) || 170;
   const ageNum = parseInt(age, 10) || 25;
 
-  // Real-time BMI
   const heightM = heightCm / 100;
   const bmi = heightM > 0 ? weightKg / (heightM * heightM) : 0;
 
@@ -55,21 +73,63 @@ export default function Onboarding() {
     ? 10 * weightKg + 6.25 * heightCm - 5 * ageNum + 5
     : 10 * weightKg + 6.25 * heightCm - 5 * ageNum - 161;
 
-  // Activity level multipliers
+  // Activity multiplier
   const actMult = activity === 'sedentary' ? 1.2
-                : activity === 'light' ? 1.375
-                : activity === 'moderate' ? 1.55
-                : activity === 'active' ? 1.725
-                : 1.55;
+    : activity === 'light' ? 1.375
+    : activity === 'moderate' ? 1.55
+    : activity === 'active' ? 1.9
+    : 1.55;
+
+  const activityLabel = activity === 'sedentary' ? 'Sedentary'
+    : activity === 'light' ? 'Light'
+    : activity === 'moderate' ? 'Moderate'
+    : activity === 'active' ? 'Hard'
+    : 'Moderate';
+
+  const activityDesc = activity === 'sedentary' ? 'Desk job, little or no exercise'
+    : activity === 'light' ? '1–3 days exercise per week'
+    : activity === 'moderate' ? '3–5 days exercise per week'
+    : activity === 'active' ? '6–7 days intense training'
+    : '3–5 days/week exercise';
 
   const tdee = Math.round(bmr * actMult);
-  let calorieTarget = tdee;
-  if (goal === 'cut') calorieTarget = Math.round(tdee * 0.8);
-  else if (goal === 'lean') calorieTarget = Math.round(tdee * 1.15);
 
+  // Goal adjustment
+  let calorieTarget = tdee;
+  let goalAdjustment = 0;
+  let goalAdjustmentLabel = 'No Adjustment';
+  if (goal === 'cut') {
+    calorieTarget = Math.round(tdee * 0.8);
+    goalAdjustment = calorieTarget - tdee;
+    goalAdjustmentLabel = '−20% Deficit';
+  } else if (goal === 'lean') {
+    calorieTarget = Math.round(tdee * 1.15);
+    goalAdjustment = calorieTarget - tdee;
+    goalAdjustmentLabel = '+15% Surplus';
+  }
+
+  // Macro targets
   const proteinTarget = Math.round(weightKg * (goal === 'cut' ? 2.2 : goal === 'lean' ? 2.0 : 1.6));
   const fatTarget = Math.round(calorieTarget * 0.25 / 9);
   const carbsTarget = Math.round((calorieTarget - proteinTarget * 4 - fatTarget * 9) / 4);
+
+  // Macro percentages
+  const totalMacroCals = proteinTarget * 4 + carbsTarget * 4 + fatTarget * 9;
+  const proteinPct = totalMacroCals > 0 ? Math.round((proteinTarget * 4 / totalMacroCals) * 100) : 0;
+  const carbsPct = totalMacroCals > 0 ? Math.round((carbsTarget * 4 / totalMacroCals) * 100) : 0;
+  const fatPct = totalMacroCals > 0 ? Math.round((fatTarget * 9 / totalMacroCals) * 100) : 0;
+
+  // Mode label
+  const modeLabel = goal === 'cut' ? 'CUT MODE' : goal === 'lean' ? 'LEAN MODE' : 'BALANCE MODE';
+  const modeDesc = goal === 'cut'
+    ? "You're in a caloric deficit. You'll lose body fat while preserving muscle with high protein."
+    : goal === 'lean'
+    ? "You're in a caloric surplus. You'll build lean muscle with adequate protein and energy."
+    : "You're eating at maintenance. Your weight should remain stable while you build healthy habits.";
+
+  // BMR formula string
+  const sexOffset = sex === 'male' ? '+5' : '−161';
+  const bmrFormula = `(10×${weightKg}) + (6.25×${heightCm}) − (5×${ageNum}) ${sexOffset}`;
 
   // ── Save profile mutation ──────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -271,8 +331,13 @@ export default function Onboarding() {
     saveMutation.mutate(payload);
   };
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Step renderers ────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+
   const renderStep = () => {
     switch (step) {
+      // ── Step 0: Welcome ─────────────────────────────────────────────────
       case 0:
         return (
           <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center', paddingTop: 40 }}>
@@ -293,15 +358,19 @@ export default function Onboarding() {
               fontSize: 14, color: DotFuelColors.muted, fontWeight: '500',
               textAlign: 'center', lineHeight: 22, maxWidth: 280,
             }}>
-              We'll calculate your daily calorie and macro targets based on your body and goals.
+              We'll calculate your daily calorie and macro targets using the Mifflin-St Jeor equation — the gold standard for metabolic estimation.
             </Text>
           </Animated.View>
         );
 
+      // ── Step 1: About You ───────────────────────────────────────────────
       case 1:
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
             <Text style={sectionTitle}>About You</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18, marginBottom: 4 }}>
+              Your age and sex affect your Basal Metabolic Rate (BMR).
+            </Text>
             <Field label="Your Name" value={name} onChange={setName} placeholder="What should we call you?" disabled={saveMutation.isPending} />
             <Field label="Age" value={age} onChange={setAge} keyboardType="numeric" placeholder="25" disabled={saveMutation.isPending} />
             <View style={{ gap: 8 }}>
@@ -346,243 +415,460 @@ export default function Onboarding() {
           </Animated.View>
         );
 
+      // ── Step 2: Body Metrics + BMR Preview ─────────────────────────────
       case 2:
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
-            <Text style={sectionTitle}>Your Body</Text>
-            <Field label="Weight (kg)" value={weight} onChange={setWeight} keyboardType="decimal-pad" placeholder="70" disabled={saveMutation.isPending} />
-            <Field label="Height (cm)" value={height} onChange={setHeight} keyboardType="decimal-pad" placeholder="170" disabled={saveMutation.isPending} />
+            <Text style={sectionTitle}>Your Body{'\n'}Metrics</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18, marginBottom: 4 }}>
+              Used to calculate your Basal Metabolic Rate (BMR).
+            </Text>
 
-            {/* BMR & BMI Badge Panel */}
+            {/* Weight and Height side by side */}
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={fieldLabel}>Weight</Text>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: DotFuelColors.card, borderRadius: 14,
+                  borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                  paddingHorizontal: 16, paddingVertical: 14,
+                }}>
+                  <Input
+                    value={weight}
+                    onChangeText={setWeight}
+                    keyboardType="decimal-pad"
+                    placeholder="70"
+                    style={{
+                      flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
+                      color: DotFuelColors.white, backgroundColor: 'transparent',
+                      borderWidth: 0, padding: 0, margin: 0,
+                    }}
+                    editable={!saveMutation.isPending}
+                  />
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>KG</Text>
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={fieldLabel}>Height</Text>
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center',
+                  backgroundColor: DotFuelColors.card, borderRadius: 14,
+                  borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                  paddingHorizontal: 16, paddingVertical: 14,
+                }}>
+                  <Input
+                    value={height}
+                    onChangeText={setHeight}
+                    keyboardType="decimal-pad"
+                    placeholder="169"
+                    style={{
+                      flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
+                      color: DotFuelColors.white, backgroundColor: 'transparent',
+                      borderWidth: 0, padding: 0, margin: 0,
+                    }}
+                    editable={!saveMutation.isPending}
+                  />
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>CM</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* BMR Preview Card */}
             {weight && height && (
-              <Animated.View entering={FadeIn.duration(300)} style={{
-                flexDirection: 'row', gap: 12, marginTop: 12,
-                backgroundColor: DotFuelColors.card, borderRadius: 16,
-                padding: 16, borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-              }}>
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>BMI</Text>
-                  <Text style={{ fontSize: 24, fontWeight: '900', color: DotFuelColors.white, marginTop: 2 }}>
-                    {bmi > 0 ? bmi.toFixed(1) : '—'}
-                  </Text>
-                  <Text style={{
-                    fontSize: 10,
-                    color: bmi < 18.5 ? '#6fa3ff' : bmi < 25 ? DotFuelColors.lime : bmi < 30 ? '#FF8C00' : '#FF3B3B',
-                    fontWeight: '800', marginTop: 2
-                  }}>
-                    {bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese'}
-                  </Text>
-                </View>
+              <Animated.View entering={FadeIn.duration(300)}>
+                <Pressable
+                  onPress={() => setShowBmrPreview(!showBmrPreview)}
+                  style={{
+                    backgroundColor: DotFuelColors.card, borderRadius: 16,
+                    borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                    padding: 18, marginTop: 8,
+                  }}
+                >
+                  {/* Header */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showBmrPreview ? 12 : 0 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 16 }}>🧬</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                        BMR PREVIEW
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
+                      {showBmrPreview ? '▲' : '▼'}
+                    </Text>
+                  </View>
 
-                <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.06)', alignSelf: 'center' }} />
+                  {showBmrPreview && (
+                    <View>
+                      {/* Formula */}
+                      <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 20, marginBottom: 12 }}>
+                        {bmrFormula} = {Math.round(bmr)}
+                      </Text>
 
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>BMR</Text>
-                  <Text style={{ fontSize: 24, fontWeight: '900', color: DotFuelColors.white, marginTop: 2 }}>
-                    {bmr > 0 ? Math.round(bmr) : '—'}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: DotFuelColors.muted, fontWeight: '800', marginTop: 2 }}>kcal/day</Text>
-                </View>
+                      {/* Result */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                        <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500' }}>
+                          Your base calorie burn at rest
+                        </Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{
+                            fontFamily: 'Inter', fontSize: 32, fontWeight: '900',
+                            color: DotFuelColors.lime, letterSpacing: -1,
+                          }}>
+                            {Math.round(bmr).toLocaleString()}
+                          </Text>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>
+                            KCAL/DAY
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                </Pressable>
               </Animated.View>
             )}
           </Animated.View>
         );
 
+      // ── Step 3: Activity Level (dedicated page) ────────────────────────
       case 3:
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
-            <Text style={sectionTitle}>Before You Fuel</Text>
-            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18 }}>
-              Understand the visual language of the application's central fuel metrics.
+            <Text style={sectionTitle}>Activity{'\n'}Level</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18, marginBottom: 8 }}>
+              How active are you in a typical week?
             </Text>
 
-            <View style={{ gap: 12, marginTop: 8 }}>
-              {/* Blue */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.blue, borderRadius: 14, padding: 16 }}>
-                <Text style={{ fontSize: 24 }}>🔵</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>Blue State (80% Fueled)</Text>
-                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
-                    Within striking distance of optimal execution.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Red */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.red, borderRadius: 14, padding: 16 }}>
-                <Text style={{ fontSize: 24 }}>🔴</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.red }}>Glowing Red State (&lt;30% Fueled)</Text>
-                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
-                    Fueling is insufficient or poor; an urgent trigger to step up intake.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Green */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: DotFuelColors.card, borderWidth: 1, borderColor: DotFuelColors.cardBorder, borderLeftWidth: 3, borderLeftColor: DotFuelColors.lime, borderRadius: 14, padding: 16 }}>
-                <View style={{
-                  width: 20, height: 20, borderRadius: 10,
-                  backgroundColor: DotFuelColors.lime,
-                  shadowColor: DotFuelColors.lime,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.6,
-                  shadowRadius: 6,
-                  elevation: 4,
-                  alignItems: 'center', justifyContent: 'center'
-                }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.lime }}>Neon Green State (100% Fully Fueled)</Text>
-                  <Text style={{ fontSize: 12, color: DotFuelColors.muted, marginTop: 2, lineHeight: 16 }}>
-                    Perfect synchronization of targeted performance nutrition.
-                  </Text>
-                </View>
-              </View>
+            <View style={{ gap: 10 }}>
+              {([
+                { id: 'sedentary', label: 'SEDENTARY', emoji: '🪑', desc: 'Desk job, little or no exercise', mult: 1.2 },
+                { id: 'light', label: 'LIGHT', emoji: '🏋️', desc: '1–3 days exercise per week', mult: 1.375 },
+                { id: 'moderate', label: 'MODERATE', emoji: '🏃', desc: '3–5 days exercise per week', mult: 1.55 },
+                { id: 'active', label: 'HARD', emoji: '🏋️‍♂️', desc: '6–7 days intense training', mult: 1.9 },
+              ] as const).map((act) => {
+                const isSelected = activity === act.id;
+                return (
+                  <Pressable
+                    key={act.id}
+                    onPress={() => {
+                      if (saveMutation.isPending) return;
+                      setActivity(act.id);
+                      if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
+                    }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      backgroundColor: isSelected ? 'rgba(194,240,0,0.08)' : DotFuelColors.card,
+                      borderWidth: isSelected ? 1.5 : 1,
+                      borderColor: isSelected ? 'rgba(194,240,0,0.4)' : DotFuelColors.cardBorder,
+                      borderRadius: 16, padding: 16,
+                    }}
+                  >
+                    <Text style={{ fontSize: 28, marginRight: 14 }}>{act.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{
+                        fontSize: 16, fontWeight: '900', fontFamily: 'Inter',
+                        color: DotFuelColors.white, letterSpacing: 0.5,
+                      }}>
+                        {act.label}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: DotFuelColors.muted, fontWeight: '500', marginTop: 2 }}>
+                        {act.desc}
+                      </Text>
+                    </View>
+                    {/* Multiplier badge */}
+                    <View style={{
+                      backgroundColor: isSelected ? 'rgba(194,240,0,0.15)' : 'rgba(255,255,255,0.04)',
+                      borderWidth: 1,
+                      borderColor: isSelected ? 'rgba(194,240,0,0.3)' : 'rgba(255,255,255,0.08)',
+                      borderRadius: 10,
+                      paddingVertical: 6, paddingHorizontal: 10,
+                    }}>
+                      <Text style={{
+                        fontSize: 14, fontWeight: '900', fontFamily: 'Inter',
+                        color: isSelected ? DotFuelColors.lime : DotFuelColors.muted,
+                      }}>
+                        ×{act.mult}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           </Animated.View>
         );
 
+      // ── Step 4: Goal (Fuel Mode) ──────────────────────────────────────
       case 4:
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
-            <Text style={sectionTitle}>Goal & Activity</Text>
+            <Text style={sectionTitle}>Your Goal</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, fontWeight: '500', lineHeight: 18, marginBottom: 4 }}>
+              This determines whether you eat at a deficit, maintenance, or surplus.
+            </Text>
 
-            {/* Goal Selector */}
-            <View style={{ gap: 8 }}>
-              <Text style={fieldLabel}>Primary Goal</Text>
-              <View style={{ gap: 8 }}>
-                {([
-                  { id: 'cut', label: 'Fat Loss', emoji: '🔥', desc: 'Lose body fat while retaining lean mass' },
-                  { id: 'balance', label: 'Maintenance', emoji: '⚖️', desc: 'Maintain body composition and energy' },
-                  { id: 'lean', label: 'Muscle Gain', emoji: '💪', desc: 'Build lean strength and muscle tissue' }
-                ] as const).map((g) => {
-                  const isSelected = goal === g.id;
-                  return (
-                    <Pressable
-                      key={g.id}
-                      onPress={() => {
-                        if (saveMutation.isPending) return;
-                        setGoal(g.id);
-                        if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
-                      }}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 12,
-                        backgroundColor: isSelected ? 'rgba(30,73,207,0.12)' : DotFuelColors.card,
-                        borderWidth: isSelected ? 1.5 : 1,
-                        borderColor: isSelected ? '#1E49CF' : DotFuelColors.cardBorder,
-                        borderRadius: 14, padding: 14,
-                      }}
-                    >
-                      <Text style={{ fontSize: 24 }}>{g.emoji}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>{g.label}</Text>
-                        <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 2 }}>{g.desc}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Activity Level Selector */}
-            <View style={{ gap: 8, marginTop: 12 }}>
-              <Text style={fieldLabel}>Exercise Activity Multiplier</Text>
-              <View style={{ gap: 8 }}>
-                {([
-                  { id: 'sedentary', label: 'Sedentary', emoji: '🪑', desc: 'Little to no exercise' },
-                  { id: 'light', label: 'Lightly Active', emoji: '🚶', desc: '1-3 days/week exercise' },
-                  { id: 'moderate', label: 'Moderately Active', emoji: '🏃', desc: '3-5 days/week exercise' },
-                  { id: 'active', label: 'Highly Active', emoji: '🏋️', desc: '6-7 days intense training/week' }
-                ] as const).map((act) => {
-                  const isSelected = activity === act.id;
-                  return (
-                    <Pressable
-                      key={act.id}
-                      onPress={() => {
-                        if (saveMutation.isPending) return;
-                        setActivity(act.id);
-                        if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
-                      }}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 12,
-                        backgroundColor: isSelected ? 'rgba(30,73,207,0.12)' : DotFuelColors.card,
-                        borderWidth: isSelected ? 1.5 : 1,
-                        borderColor: isSelected ? '#1E49CF' : DotFuelColors.cardBorder,
-                        borderRadius: 14, padding: 14,
-                      }}
-                    >
-                      <Text style={{ fontSize: 24 }}>{act.emoji}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>{act.label}</Text>
-                        <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 2 }}>{act.desc}</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
+            <View style={{ gap: 10 }}>
+              {([
+                { id: 'cut', label: 'Fat Loss', emoji: '🔥', desc: 'Lose body fat while retaining lean mass', badge: '−20%' },
+                { id: 'balance', label: 'Maintenance', emoji: '⚖️', desc: 'Maintain body composition and energy', badge: '0%' },
+                { id: 'lean', label: 'Muscle Gain', emoji: '💪', desc: 'Build lean strength and muscle tissue', badge: '+15%' },
+              ] as const).map((g) => {
+                const isSelected = goal === g.id;
+                return (
+                  <Pressable
+                    key={g.id}
+                    onPress={() => {
+                      if (saveMutation.isPending) return;
+                      setGoal(g.id);
+                      if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
+                    }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      backgroundColor: isSelected ? 'rgba(194,240,0,0.08)' : DotFuelColors.card,
+                      borderWidth: isSelected ? 1.5 : 1,
+                      borderColor: isSelected ? 'rgba(194,240,0,0.4)' : DotFuelColors.cardBorder,
+                      borderRadius: 16, padding: 16,
+                    }}
+                  >
+                    <Text style={{ fontSize: 28, marginRight: 14 }}>{g.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{
+                        fontSize: 16, fontWeight: '900', fontFamily: 'Inter',
+                        color: DotFuelColors.white, letterSpacing: 0.5,
+                      }}>
+                        {g.label}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: DotFuelColors.muted, fontWeight: '500', marginTop: 2 }}>
+                        {g.desc}
+                      </Text>
+                    </View>
+                    <View style={{
+                      backgroundColor: isSelected ? 'rgba(194,240,0,0.15)' : 'rgba(255,255,255,0.04)',
+                      borderWidth: 1,
+                      borderColor: isSelected ? 'rgba(194,240,0,0.3)' : 'rgba(255,255,255,0.08)',
+                      borderRadius: 10,
+                      paddingVertical: 6, paddingHorizontal: 10,
+                    }}>
+                      <Text style={{
+                        fontSize: 13, fontWeight: '900', fontFamily: 'Inter',
+                        color: isSelected ? DotFuelColors.lime : DotFuelColors.muted,
+                      }}>
+                        {g.badge}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           </Animated.View>
         );
 
+      // ── Step 5: Results — Full Breakdown ──────────────────────────────
       case 5:
         return (
-          <Animated.View entering={FadeIn.duration(400)} style={{ alignItems: 'center' }}>
-            <View style={{
-              width: 120, height: 120, borderRadius: 60,
-              backgroundColor: DotFuelColors.lime, marginBottom: 20,
-              alignItems: 'center', justifyContent: 'center',
-            }}>
+          <Animated.View entering={FadeIn.duration(400)} style={{ gap: 20 }}>
+            {/* Mode Title */}
+            <View style={{ alignItems: 'center' }}>
               <Text style={{
-                fontFamily: 'Inter', fontSize: 36, fontWeight: '900',
-                color: DotFuelColors.black, letterSpacing: -2,
+                fontFamily: 'Inter', fontSize: 28, fontWeight: '900',
+                color: DotFuelColors.white, textAlign: 'center',
+                textTransform: 'uppercase', letterSpacing: -1,
               }}>
-                {calorieTarget}
+                {modeLabel}
               </Text>
-              <Text style={{ fontSize: 8, fontWeight: '800', color: 'rgba(0,0,0,0.5)', letterSpacing: 2 }}>
-                KCAL/DAY
+              <Text style={{
+                fontSize: 13, color: DotFuelColors.muted, fontWeight: '500',
+                textAlign: 'center', lineHeight: 20, marginTop: 8, maxWidth: 300,
+              }}>
+                {modeDesc}
               </Text>
             </View>
 
-            <Text style={{
-              fontFamily: 'Inter', fontSize: 22, fontWeight: '900',
-              color: DotFuelColors.white, textAlign: 'center', marginBottom: 20,
-            }}>
-              Your fuel plan is ready! 🚀
-            </Text>
-
+            {/* Target Card */}
             <View style={{
-              flexDirection: 'row', gap: 12, marginBottom: 20, width: '100%',
+              backgroundColor: DotFuelColors.lime, borderRadius: 20,
+              padding: 24, flexDirection: 'row', alignItems: 'center',
+              justifyContent: 'space-between',
             }}>
+              <View>
+                <Text style={{
+                  fontSize: 10, fontWeight: '900', color: 'rgba(0,0,0,0.5)',
+                  letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4,
+                }}>
+                  {modeLabel} TARGET
+                </Text>
+                <Text style={{
+                  fontFamily: 'Inter', fontSize: 48, fontWeight: '900',
+                  color: DotFuelColors.black, letterSpacing: -3,
+                }}>
+                  {calorieTarget.toLocaleString()}
+                </Text>
+              </View>
+              <Text style={{
+                fontSize: 14, fontWeight: '700', color: 'rgba(0,0,0,0.6)',
+                maxWidth: 120, lineHeight: 20,
+              }}>
+                {goal === 'cut' ? "You're in a deficit." : goal === 'lean' ? "You're in a surplus." : "You're eating at maintenance."}
+              </Text>
+            </View>
+
+            {/* Macro Breakdown */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
               {[
-                { label: 'Protein', value: `${proteinTarget}g`, color: DotFuelColors.blue },
-                { label: 'Carbs', value: `${carbsTarget}g`, color: DotFuelColors.lime },
-                { label: 'Fat', value: `${fatTarget}g`, color: DotFuelColors.green },
-              ].map(({ label, value, color }) => (
+                { label: 'PROTEIN', value: `${proteinTarget}g`, pct: `${proteinPct}%`, color: '#6fa3ff', borderColor: 'rgba(111,163,255,0.4)' },
+                { label: 'CARBS', value: `${carbsTarget}g`, pct: `${carbsPct}%`, color: DotFuelColors.lime, borderColor: 'rgba(194,240,0,0.4)' },
+                { label: 'FAT', value: `${fatTarget}g`, pct: `${fatPct}%`, color: '#00E8C6', borderColor: 'rgba(0,232,198,0.4)' },
+              ].map(({ label, value, pct, color, borderColor }) => (
                 <View key={label} style={{
-                  flex: 1, backgroundColor: DotFuelColors.card, borderRadius: 16,
+                  flex: 1, backgroundColor: DotFuelColors.card, borderRadius: 14,
                   padding: 14, alignItems: 'center',
+                  borderWidth: 1.5, borderColor: borderColor,
                 }}>
                   <Text style={{
                     fontFamily: 'Inter', fontSize: 22, fontWeight: '900', color,
                   }}>
-                    {value}
+                    {pct}
                   </Text>
-                  <Text style={{ fontSize: 10, fontWeight: '700', color: DotFuelColors.muted, marginTop: 2 }}>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '800', color: DotFuelColors.muted,
+                    letterSpacing: 1, textTransform: 'uppercase', marginTop: 2,
+                  }}>
                     {label}
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color, marginTop: 4 }}>
+                    {value}
                   </Text>
                 </View>
               ))}
             </View>
+
+            {/* How We Calculated This — Collapsible */}
+            <Pressable
+              onPress={() => setShowCalcBreakdown(!showCalcBreakdown)}
+              style={{
+                backgroundColor: DotFuelColors.card, borderRadius: 16,
+                borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                padding: 18,
+              }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showCalcBreakdown ? 16 : 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 16 }}>🧬</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                    HOW WE CALCULATED THIS
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
+                  {showCalcBreakdown ? '▲' : '▼'}
+                </Text>
+              </View>
+
+              {showCalcBreakdown && (
+                <View style={{ gap: 16 }}>
+                  {/* BMR Row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>🧬</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                        BMR (Mifflin-St Jeor)
+                      </Text>
+                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                        {bmrFormula}
+                      </Text>
+                    </View>
+                    <Text style={{
+                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                      color: DotFuelColors.lime,
+                    }}>
+                      {Math.round(bmr).toLocaleString()} kcal
+                    </Text>
+                  </View>
+
+                  {/* Arrow */}
+                  <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
+
+                  {/* TDEE Row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>🏃</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                        Activity Multiplier
+                      </Text>
+                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                        BMR × {actMult} ({activityLabel} · {activityDesc})
+                      </Text>
+                    </View>
+                    <Text style={{
+                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                      color: DotFuelColors.lime,
+                    }}>
+                      {tdee.toLocaleString()} kcal
+                    </Text>
+                  </View>
+
+                  {/* Arrow */}
+                  <Text style={{ textAlign: 'center', fontSize: 16, color: DotFuelColors.muted }}>↓</Text>
+
+                  {/* Goal Adjustment Row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>⚖️</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.white }}>
+                        Goal Adjustment
+                      </Text>
+                      <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginTop: 1 }}>
+                        {goalAdjustmentLabel}
+                      </Text>
+                    </View>
+                    <Text style={{
+                      fontFamily: 'Inter', fontSize: 16, fontWeight: '900',
+                      color: goalAdjustment === 0 ? DotFuelColors.muted : goalAdjustment < 0 ? DotFuelColors.orange : DotFuelColors.lime,
+                    }}>
+                      {goalAdjustment === 0 ? '0' : goalAdjustment > 0 ? `+${goalAdjustment}` : `${goalAdjustment}`} kcal
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </Pressable>
+
+            {/* 2-Week Calibration Tip */}
+            <Pressable
+              onPress={() => setShowCalibrationTip(!showCalibrationTip)}
+              style={{
+                backgroundColor: DotFuelColors.card, borderRadius: 16,
+                borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                padding: 18,
+              }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showCalibrationTip ? 10 : 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 16 }}>📅</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
+                    2-WEEK CALIBRATION TIP
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 14, color: DotFuelColors.muted }}>
+                  {showCalibrationTip ? '▲' : '▼'}
+                </Text>
+              </View>
+
+              {showCalibrationTip && (
+                <Text style={{
+                  fontSize: 14, color: DotFuelColors.text, fontWeight: '500',
+                  lineHeight: 22,
+                }}>
+                  Eat at this target for 14 days and weigh yourself daily. If your weight stays stable, this is your true maintenance. We'll help you adjust if needed.
+                </Text>
+              )}
+            </Pressable>
           </Animated.View>
         );
     }
   };
 
-  const isLast = step === 5;
-  const canContinue = step === 0 || step === 3 || step === 5 ||
+  const isLast = step === TOTAL_STEPS - 1;
+  const canContinue = step === 0 || step === 3 || step === 4 || step === 5 ||
     (step === 1 && name.trim()) ||
-    (step === 2 && weight && height) ||
-    step === 4;
+    (step === 2 && weight && height);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
@@ -593,21 +879,35 @@ export default function Onboarding() {
             contentContainerStyle={{ paddingBottom: 120 }}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Step pills */}
+            {/* Back button + Step progress pills */}
             <View style={{
-              flexDirection: 'row', gap: 5, justifyContent: 'center',
+              flexDirection: 'row', alignItems: 'center',
               paddingTop: 16, paddingHorizontal: Spacing['2xl'], paddingBottom: 24,
+              gap: 12,
             }}>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <View key={i} style={{
-                  flex: 1, height: 3, borderRadius: 2,
-                  backgroundColor: i < step
-                    ? DotFuelColors.lime
-                    : i === step
-                    ? 'rgba(194,240,0,0.4)'
-                    : DotFuelColors.surface,
-                }} />
-              ))}
+              {step > 0 && (
+                <Pressable
+                  onPress={back}
+                  style={{
+                    width: 40, height: 40, borderRadius: 20,
+                    backgroundColor: DotFuelColors.card, alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 16, color: DotFuelColors.white, fontWeight: '800' }}>←</Text>
+                </Pressable>
+              )}
+              <View style={{ flex: 1, flexDirection: 'row', gap: 5 }}>
+                {Array.from({ length: TOTAL_STEPS }, (_, i) => (
+                  <View key={i} style={{
+                    flex: 1, height: 3, borderRadius: 2,
+                    backgroundColor: i < step
+                      ? DotFuelColors.lime
+                      : i === step
+                      ? 'rgba(194,240,0,0.4)'
+                      : DotFuelColors.surface,
+                  }} />
+                ))}
+              </View>
             </View>
 
             <View style={{ paddingHorizontal: Spacing['2xl'] }}>
@@ -668,4 +968,3 @@ function Field({ label, value, onChange, keyboardType, placeholder, disabled }: 
     />
   );
 }
-
