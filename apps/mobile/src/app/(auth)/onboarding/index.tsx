@@ -437,10 +437,10 @@ export default function Onboarding() {
                     keyboardType="decimal-pad"
                     placeholder="70"
                     placeholderTextColor={DotFuelColors.muted}
-                    style={{
+                    style={[{
                       flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
                       color: DotFuelColors.white, padding: 0,
-                    }}
+                    }, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
                     editable={!saveMutation.isPending}
                   />
                   <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>KG</Text>
@@ -460,10 +460,10 @@ export default function Onboarding() {
                     keyboardType="decimal-pad"
                     placeholder="169"
                     placeholderTextColor={DotFuelColors.muted}
-                    style={{
+                    style={[{
                       flex: 1, fontSize: 22, fontWeight: '900', fontFamily: 'Inter',
                       color: DotFuelColors.white, padding: 0,
-                    }}
+                    }, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
                     editable={!saveMutation.isPending}
                   />
                   <Text style={{ fontSize: 14, fontWeight: '800', color: DotFuelColors.muted, letterSpacing: 1 }}>CM</Text>
@@ -737,7 +737,6 @@ export default function Onboarding() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <Text style={{ fontSize: 16 }}>🧬</Text>
                 <Text style={{ fontSize: 12, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>
                   HOW WE CALCULATED THIS
                 </Text>
