@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image, Modal, Platform } from 'react-native';
+import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image, Modal, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Stack, useRouter } from 'expo-router';
@@ -80,6 +80,48 @@ export default function Vol3ChallengeScreen() {
   // Inspector states
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [inspectorVisible, setInspectorVisible] = useState(false);
+
+  // Countdown Timer state
+  const [timeLeft, setTimeLeft] = useState({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    hasStarted: true, // Default to true so it doesn't flash dashboard briefly
+  });
+
+  useEffect(() => {
+    const startMs = new Date('2026-06-23T00:00:00+05:30').getTime();
+    
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const diff = startMs - now;
+      if (diff <= 0) {
+        setTimeLeft(prev => ({ ...prev, hasStarted: true }));
+        return true;
+      }
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setTimeLeft({ days, hours, minutes, seconds, hasStarted: false });
+      return false;
+    };
+    
+    const isFinished = updateCountdown();
+    if (isFinished) return;
+    
+    const interval = setInterval(() => {
+      const isFinished = updateCountdown();
+      if (isFinished) {
+        clearInterval(interval);
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
 
   const [tasks, setTasks] = useState({
@@ -178,14 +220,31 @@ export default function Vol3ChallengeScreen() {
       const { data: parts } = await supabase.from('challenge_vol3_participants').select('user_id').eq('status', 'active');
       if (parts && parts.length > 0) {
         const ids = parts.map(p => p.user_id);
-        const { data: users } = await supabase.from('users').select('id, name, streak_days').in('id', ids);
-        if (users) {
-          const sorted = users
-            .filter(u => u.name)
-            .map(u => ({ ...u, streak_days: u.streak_days || 0 }))
-            .sort((a, b) => b.streak_days - a.streak_days);
-          setLeaderboard(sorted);
-        }
+        const [usersRes, profilesRes] = await Promise.all([
+          supabase.from('users').select('id, name, streak_days').in('id', ids),
+          supabase.from('profiles').select('id, name').in('id', ids)
+        ]);
+
+        const users = usersRes.data || [];
+        const profiles = profilesRes.data || [];
+
+        const userMap = new Map(users.map(u => [u.id, u]));
+        const profileMap = new Map(profiles.map(p => [p.id, p]));
+
+        const leaderboardData = ids.map(id => {
+          const u = userMap.get(id);
+          const p = profileMap.get(id);
+          const name = u?.name?.trim() || p?.name?.trim() || 'Athlete';
+          const streak_days = u?.streak_days || 0;
+          return {
+            id,
+            name,
+            streak_days,
+          };
+        });
+
+        const sorted = leaderboardData.sort((a, b) => b.streak_days - a.streak_days);
+        setLeaderboard(sorted);
       }
 
       // Fetch Chat Messages
@@ -238,6 +297,70 @@ export default function Vol3ChallengeScreen() {
       }
     } catch (err) {
       console.log('Error joining challenge', err);
+    }
+  };
+
+  const exitChallenge = async () => {
+    if (!user || !participant) return;
+    
+    let confirm = false;
+    if (Platform.OS === 'web') {
+      confirm = window.confirm("Are you sure you want to exit the Volume 3 Challenge? Your challenge progress and active streaks will be lost forever.");
+    } else {
+      confirm = await new Promise((resolve) => {
+        Alert.alert(
+          "Exit Challenge",
+          "Are you sure you want to exit the Volume 3 Challenge? Your challenge progress and active streaks will be lost forever.",
+          [
+            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+            { text: "Exit Challenge", style: "destructive", onPress: () => resolve(true) }
+          ],
+          { cancelable: true }
+        );
+      });
+    }
+
+    if (!confirm) return;
+
+    try {
+      setLoading(true);
+      // Delete progress rows
+      await supabase
+        .from('challenge_vol3_daily_progress')
+        .delete()
+        .eq('user_id', user.id);
+
+      // Delete participant row
+      const { error } = await supabase
+        .from('challenge_vol3_participants')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Reset local states
+      setParticipant(null);
+      setProgressData({});
+      setTasks({
+        cleanMeals: false,
+        workout: false,
+        read: false,
+        water: false,
+        custom: false,
+      });
+      setCustomTaskName('');
+      setCutList(['', '', '']);
+    } catch (err) {
+      console.log('Error exiting challenge', err);
+      if (Platform.OS === 'web') {
+        window.alert('Failed to exit the challenge. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to exit the challenge. Please try again.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -314,14 +437,32 @@ export default function Vol3ChallengeScreen() {
     setChatInput('');
     
     try {
-      await supabase.from('challenge_vol3_chat').insert({
-        user_id: user.id,
-        message: msgText,
-        profile_name: profile?.name || user.email?.split('@')[0] || 'Challenger',
-        image_url: profile?.avatar_url || null
-      });
-    } catch (err) {
-      console.log('Error sending msg', err);
+      const { data, error } = await supabase
+        .from('challenge_vol3_chat')
+        .insert({
+          user_id: user.id,
+          message: msgText,
+          profile_name: profile?.name || user.email?.split('@')[0] || 'Challenger',
+          image_url: profile?.avatar_url || null
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Chat insert error:', error);
+        Alert.alert('Chat Error', error.message);
+        setChatInput(msgText); // Restore input on failure
+      } else if (data) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === data.id)) return prev;
+          return [...prev, data as Vol3ChatMessage];
+        });
+        setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    } catch (err: any) {
+      console.error('Error sending msg', err);
+      Alert.alert('Error', err.message);
+      setChatInput(msgText);
     }
   };
 
@@ -469,8 +610,7 @@ export default function Vol3ChallengeScreen() {
             <Text style={{ fontSize: 52, marginBottom: 14 }}>🔥</Text>
             <Text style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: '900', color: DotFuelColors.white, marginBottom: 6 }}>Welcome to Vol 3</Text>
             <Text style={{ fontSize: 13, color: DotFuelColors.muted, textAlign: 'center', lineHeight: 20 }}>
-              The ultimate test of consistency. Stay clean-eating from now until <Text style={{ color: DotFuelColors.white, fontWeight: 'bold' }}>August 30, 2026</Text>. 
-              Define your Cut List, maintain your streak, and push through with <Text style={{ color: DotFuelColors.lime, fontWeight: 'bold' }}>2 emergency Streak Revivals</Text>.
+              The ultimate test of consistency. Stay clean-eating starting <Text style={{ color: DotFuelColors.lime, fontWeight: 'bold' }}>June 23, 2026</Text> until <Text style={{ color: DotFuelColors.white, fontWeight: 'bold' }}>August 30, 2026</Text>. Members can join at any time, but the challenge concludes on August 30. Define your Cut List, maintain your streak, and push through with <Text style={{ color: DotFuelColors.lime, fontWeight: 'bold' }}>2 emergency Streak Revivals</Text>.
             </Text>
           </View>
 
@@ -522,6 +662,70 @@ export default function Vol3ChallengeScreen() {
           />
         </Animated.View>
       </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // If the user has joined (is a participant) but the challenge hasn't started yet, render the COUNTDOWN VIEW
+  if (participant && !timeLeft.hasStarted) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
+        <Stack.Screen options={{ title: 'Volume 3', headerShown: false }} />
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 50 }}>
+          <View style={{ paddingTop: 16, paddingHorizontal: Spacing['2xl'], alignItems: 'center', position: 'relative' }}>
+            <Pressable onPress={() => router.back()} style={{ position: 'absolute', top: 16, left: Spacing['2xl'], padding: 8 }}>
+              <Text style={{ color: DotFuelColors.white, fontSize: 24 }}>←</Text>
+            </Pressable>
+            <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white, letterSpacing: 0.5 }}>DOT CHALLENGE</Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.lime, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>Volume 3</Text>
+          </View>
+
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing['2xl'], marginTop: 60 }}>
+            {/* Visual countdown indicator */}
+            <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(194, 240, 0, 0.05)', alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 1, borderColor: 'rgba(194, 240, 0, 0.15)' }}>
+              <Text style={{ fontSize: 48 }}>⏳</Text>
+            </View>
+
+            <Text style={{ fontFamily: 'Inter', fontSize: 22, fontWeight: '900', color: DotFuelColors.white, marginBottom: 8, textAlign: 'center' }}>
+              YOU ARE ENROLLED!
+            </Text>
+            <Text style={{ fontSize: 13, color: DotFuelColors.muted, textAlign: 'center', lineHeight: 20, marginBottom: 32, maxWidth: 300 }}>
+              Get ready. The Volume 3 Challenge officially starts on <Text style={{ color: DotFuelColors.lime, fontWeight: 'bold' }}>June 23, 2026</Text> at midnight. You can join at any point, but the challenge concludes on August 30, 2026.
+            </Text>
+
+            {/* Countdown Grid */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 40 }}>
+              {[
+                { label: 'DAYS', val: timeLeft.days },
+                { label: 'HRS', val: timeLeft.hours },
+                { label: 'MINS', val: timeLeft.minutes },
+                { label: 'SECS', val: timeLeft.seconds },
+              ].map((item, idx) => (
+                <View key={idx} style={{ flex: 1, backgroundColor: DotFuelColors.card, borderRadius: 16, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: DotFuelColors.cardBorder, minWidth: 68 }}>
+                  <Text style={{ fontFamily: 'Inter', fontSize: 26, fontWeight: '900', color: DotFuelColors.lime }}>
+                    {String(item.val).padStart(2, '0')}
+                  </Text>
+                  <Text style={{ fontSize: 9, color: DotFuelColors.muted, fontWeight: '800', marginTop: 4, letterSpacing: 0.5 }}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Your Cut List card */}
+            {participant.cut_list && participant.cut_list.length > 0 && (
+              <View style={{ width: '100%', backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'], padding: 20, borderWidth: 1, borderColor: DotFuelColors.cardBorder }}>
+                <Text style={{ color: '#ff6b6b', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>YOUR CUT LIST 🚫</Text>
+                <View style={{ gap: 8 }}>
+                  {participant.cut_list.map((item, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: DotFuelColors.surface, borderRadius: 10, padding: 12 }}>
+                      <Text style={{ fontSize: 14 }}>•</Text>
+                      <Text style={{ fontSize: 13, color: DotFuelColors.text, fontWeight: '600' }}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -642,7 +846,12 @@ export default function Vol3ChallengeScreen() {
             {leaderboard.length === 0 ? (
               <Text style={{ color: DotFuelColors.muted, fontSize: 12, textAlign: 'center', marginVertical: 20 }}>Loading standings...</Text>
             ) : (
-              <View style={{ gap: 12 }}>
+              <ScrollView 
+                style={leaderboard.length > 5 ? { maxHeight: 270 } : null}
+                showsVerticalScrollIndicator={leaderboard.length > 5}
+                nestedScrollEnabled
+                contentContainerStyle={{ gap: 12 }}
+              >
                 {leaderboard.map((u, i) => {
                   const rank = i + 1;
                   const isMe = u.id === user?.id;
@@ -651,8 +860,8 @@ export default function Vol3ChallengeScreen() {
 
                   return (
                     <Animated.View key={u.id} entering={FadeInDown.delay(i * 50)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <Text style={{ width: 24, fontSize: 16, textAlign: 'center' }}>
-                        {rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}
+                      <Text style={{ width: 24, fontSize: 14, textAlign: 'center', color: DotFuelColors.muted, fontFamily: 'Inter', fontWeight: '700' }}>
+                        {rank}
                       </Text>
                       <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isMe ? DotFuelColors.limeLight : DotFuelColors.surface, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ color: isMe ? DotFuelColors.black : DotFuelColors.white, fontWeight: '800' }}>{u.name[0].toUpperCase()}</Text>
@@ -671,7 +880,7 @@ export default function Vol3ChallengeScreen() {
                     </Animated.View>
                   );
                 })}
-              </View>
+              </ScrollView>
             )}
           </View>
 
@@ -722,6 +931,32 @@ export default function Vol3ChallengeScreen() {
                 <Text style={{ color: DotFuelColors.white, fontSize: 18 }}>↑</Text>
               </Pressable>
             </View>
+          </View>
+
+          {/* Exit Challenge Danger Area */}
+          <View style={{ marginTop: 24, marginBottom: 20, alignItems: 'center' }}>
+            <Pressable 
+              onPress={exitChallenge}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.6 : 1,
+                paddingVertical: 12,
+                paddingHorizontal: 24,
+                borderRadius: Radius.lg,
+                borderWidth: 1,
+                borderColor: DotFuelColors.red,
+                backgroundColor: DotFuelColors.redLight,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+              })}
+            >
+              <Text style={{ color: DotFuelColors.red, fontFamily: 'Inter', fontSize: 13, fontWeight: '700' }}>
+                Exit Volume 3 Challenge 🚪
+              </Text>
+            </Pressable>
+            <Text style={{ color: DotFuelColors.muted, fontSize: 11, textAlign: 'center', marginTop: 6, width: '90%', fontFamily: 'Inter' }}>
+              Warning: Exiting will delete your challenge logs and streaks permanently.
+            </Text>
           </View>
 
         </Animated.View>

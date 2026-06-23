@@ -51,15 +51,48 @@ export default function BarcodeScannerScreen() {
     try {
       const res = await fetch(getApiUrl(`/api/fatsecret?action=barcode&barcode=${data}`));
       const result = await res.json();
+      const foodObj = result?.food;
 
-      if (result?.food_id) {
-        // Found a match — navigate to add
+      if (foodObj?.food_id) {
+        // Match found! Fetch details to get exact servings and macros
+        const detailRes = await fetch(getApiUrl(`/api/fatsecret?action=detail&food_id=${foodObj.food_id}`));
+        const detailData = await detailRes.json();
+        const foodDetail = detailData?.food || foodObj;
+        
+        const servingsObj = foodDetail?.servings?.serving;
+        const serving = Array.isArray(servingsObj) ? servingsObj[0] : servingsObj;
+
+        const calories = serving ? Math.round(parseFloat(serving.calories || '0')) : 0;
+        const protein = serving ? Math.round(parseFloat(serving.protein || '0')) : 0;
+        const carbs = serving ? Math.round(parseFloat(serving.carbohydrate || '0')) : 0;
+        const fat = serving ? Math.round(parseFloat(serving.fat || '0')) : 0;
+        const servingSize = serving ? (serving.serving_description || '1 serving') : '1 serving';
+
+        const scannedFood = {
+          name: foodDetail.food_name || 'Scanned Food',
+          emoji: '📱',
+          calories,
+          protein_g: protein,
+          carbs_g: carbs,
+          fat_g: fat,
+          serving_size: servingSize,
+          source: 'barcode',
+        };
+
         Alert.alert(
-          'Found!',
-          result.food_name || `Barcode: ${data}`,
+          'Product Found!',
+          `${scannedFood.name}\n${calories} kcal • ${servingSize}`,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => setScanned(false) },
-            { text: 'Add Food', onPress: () => router.back() },
+            { 
+              text: 'Log Food', 
+              onPress: () => {
+                router.replace({
+                  pathname: '/(tabs)/(log)',
+                  params: { scannedFood: JSON.stringify(scannedFood) }
+                });
+              } 
+            },
           ]
         );
       } else {
@@ -67,7 +100,8 @@ export default function BarcodeScannerScreen() {
           { text: 'OK', onPress: () => setScanned(false) },
         ]);
       }
-    } catch {
+    } catch (err: any) {
+      console.error('[barcode] error:', err);
       Alert.alert('Error', 'Failed to look up barcode.', [
         { text: 'OK', onPress: () => setScanned(false) },
       ]);

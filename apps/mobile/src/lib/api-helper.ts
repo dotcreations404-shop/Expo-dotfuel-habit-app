@@ -6,6 +6,9 @@ import { Platform } from 'react-native';
  */
 export function getApiUrl(path: string): string {
   if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location.hostname !== 'app.dotfuel.shop') {
+      return `https://app.dotfuel.shop${path}`;
+    }
     return path;
   }
   // Fallback to the production domain where Vercel hosts the +api routes

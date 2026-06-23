@@ -7,11 +7,18 @@
  *
  * Profile loading is tied directly to auth events so `needsOnboarding` is
  * only evaluated once both session AND profile are definitively known.
+ *
+ * IMPORTANT: To prevent the "redirect loop" on magic-link / PKCE flows,
+ * we track whether a deep-link URL with auth params is being processed.
+ * `loading` stays `true` until BOTH the initial session restore AND any
+ * pending URL-based auth are complete. This prevents the AuthGate from
+ * prematurely routing to the login page while a code exchange is in-flight.
  */
-import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { mapUsersDbToAppMode, mapProfilesDbToAppMode } from '@/lib/types';
 import type { UserProfile } from '@/lib/types';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
@@ -57,32 +64,216 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Check whether a URL contains Supabase auth params (code, access_token, etc.). */
+function urlHasAuthParams(url: string): boolean {
+  try {
+    const parsed = Linking.parse(url);
+    const qp = parsed.queryParams || {};
+    if (qp.code || qp.access_token) return true;
+
+    // Fallback: manually scan for params in query string or hash fragment
+    const hashIdx = url.indexOf('#');
+    const queryIdx = url.indexOf('?');
+    const searchPart = hashIdx !== -1
+      ? url.substring(hashIdx + 1)
+      : queryIdx !== -1
+        ? url.substring(queryIdx + 1)
+        : '';
+    if (searchPart) {
+      const p = new URLSearchParams(searchPart.split('#')[0].split('?')[0]);
+      return p.has('code') || p.has('access_token');
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Tracks whether we are still processing a URL-based auth flow
+   * (e.g. PKCE code exchange from a magic link). When true, the
+   * INITIAL_SESSION handler won't flip `loading` to false.
+   */
+  const pendingUrlAuth = useRef(false);
+  /** Whether INITIAL_SESSION has already resolved. */
+  const initialSessionDone = useRef(false);
+
   // ── Fetch profile from DB ─────────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string): Promise<void> => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const [userResult, profileResult] = await Promise.all([
+        supabase.from('users').select('*').eq('id', userId).maybeSingle(),
+        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+      ]);
 
-      if (error) {
-        console.warn('[auth] Profile fetch error:', error.message);
+      if (userResult.error) {
+        console.warn('[auth] Users fetch error:', userResult.error.message);
       }
-      setProfile(data ?? null);
-      if (data) {
+      if (profileResult.error) {
+        console.warn('[auth] Profiles fetch error:', profileResult.error.message);
+      }
+
+      const userData = userResult.data;
+      const profileData = profileResult.data;
+
+      if (userData || profileData) {
+        const merged: UserProfile = {
+          ...(userData || {}),
+          ...(profileData || {}),
+          id: userId,
+        };
+
+        // Map database fuel_mode to application fuel_mode
+        merged.fuel_mode = mapUsersDbToAppMode(userData?.fuel_mode) || mapProfilesDbToAppMode(profileData?.fuel_mode) || 'balance';
+
+        // If water_goal_l is in profiles table, convert Liters to mL
+        if (profileData?.water_goal_l !== undefined && profileData?.water_goal_l !== null) {
+          merged.water_goal_ml = Math.round(profileData.water_goal_l * 1000);
+        }
+
+        setProfile(merged);
         savePushToken(userId).catch(console.warn);
+      } else {
+        setProfile(null);
       }
     } catch (err) {
       console.warn('[auth] Profile fetch failed:', err);
       setProfile(null);
     }
   }, []);
+
+  // ── Helper: resolve loading only when ALL pending work is done ─────────
+  const maybeFinishLoading = useCallback(() => {
+    if (initialSessionDone.current && !pendingUrlAuth.current) {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Deep-Linking & PKCE Authorization handling ─────────────────────────────
+  const handleAuthUrl = useCallback(async (url: string) => {
+    try {
+      console.log('[auth] handleAuthUrl:', url);
+
+      if (!urlHasAuthParams(url)) {
+        console.log('[auth] URL has no auth params, skipping.');
+        pendingUrlAuth.current = false;
+        maybeFinishLoading();
+        return;
+      }
+
+      // Mark that we are processing a URL auth flow — keep loading = true
+      pendingUrlAuth.current = true;
+
+      const parsed = Linking.parse(url);
+      const { code, access_token, refresh_token } = parsed.queryParams || {};
+
+      let token = access_token as string;
+      let refresh = refresh_token as string;
+      let pkceCode = code as string;
+
+      // Clean and manual parse fallback for query/hash parameters
+      let cleanSearch = '';
+      const hashIndex = url.indexOf('#');
+      const queryIndex = url.indexOf('?');
+      if (hashIndex !== -1) {
+        cleanSearch = url.substring(hashIndex + 1);
+      } else if (queryIndex !== -1) {
+        cleanSearch = url.substring(queryIndex + 1);
+      }
+      if (cleanSearch) {
+        const innerHashIndex = cleanSearch.indexOf('#');
+        if (innerHashIndex !== -1) {
+          cleanSearch = cleanSearch.substring(0, innerHashIndex);
+        }
+        const innerQueryIndex = cleanSearch.indexOf('?');
+        if (innerQueryIndex !== -1) {
+          cleanSearch = cleanSearch.substring(0, innerQueryIndex);
+        }
+        
+        const params = new URLSearchParams(cleanSearch);
+        if (params.has('access_token')) token = params.get('access_token')!;
+        if (params.has('refresh_token')) refresh = params.get('refresh_token')!;
+        if (params.has('code')) pkceCode = params.get('code')!;
+      }
+
+      if (pkceCode) {
+        console.log('[auth] PKCE code detected, exchanging for session...');
+        const { error } = await supabase.auth.exchangeCodeForSession(pkceCode);
+        if (error) {
+          console.warn('[auth] PKCE exchange error:', error.message);
+          // Code may already have been consumed by detectSessionInUrl on web.
+          // If so, onAuthStateChange will handle the session — not an error.
+          if (!error.message?.includes('code')) {
+            throw error;
+          }
+        }
+      } else if (token && refresh) {
+        console.log('[auth] Session tokens detected, setting session...');
+        const { error } = await supabase.auth.setSession({
+          access_token: token,
+          refresh_token: refresh,
+        });
+        if (error) throw error;
+      }
+
+      // The SIGNED_IN event from onAuthStateChange will set loading=false.
+      // Mark URL processing as done so the auth listener can resolve.
+      pendingUrlAuth.current = false;
+      maybeFinishLoading();
+    } catch (err: any) {
+      console.warn('[auth] Redirect URL handling failed:', err.message || err);
+      pendingUrlAuth.current = false;
+      maybeFinishLoading();
+    }
+  }, [maybeFinishLoading]);
+
+  // ── Check for auth URL at startup (BEFORE onAuthStateChange can route) ──
+  useEffect(() => {
+    let cancelled = false;
+
+    // 1) Check initial URL synchronously-ish — if it has auth params,
+    //    mark as pending so INITIAL_SESSION won't prematurely resolve.
+    Linking.getInitialURL().then((url) => {
+      if (cancelled) return;
+      if (url && urlHasAuthParams(url)) {
+        console.log('[auth] Initial URL has auth params — holding loading=true');
+        pendingUrlAuth.current = true;
+        handleAuthUrl(url);
+      } else {
+        // No auth URL — if INITIAL_SESSION already fired, we can unlock.
+        pendingUrlAuth.current = false;
+        maybeFinishLoading();
+      }
+    });
+
+    // 2) Listen for runtime deep links (e.g. app already open, link tapped)
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleAuthUrl(event.url);
+    });
+
+    // 3) Safety timeout — never stay stuck in loading for more than 10s.
+    //    This handles edge cases where the URL processing silently fails
+    //    or the deep-link callback never fires.
+    const timeout = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('[auth] Safety timeout — forcing loading=false');
+        pendingUrlAuth.current = false;
+        initialSessionDone.current = true;
+        setLoading(false);
+      }
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      subscription.remove();
+    };
+  }, [handleAuthUrl, maybeFinishLoading]);
 
   // ── Single source of truth: onAuthStateChange ─────────────────────────────
   // Per Supabase docs: use onAuthStateChange exclusively — not alongside
@@ -100,25 +291,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (event === 'INITIAL_SESSION') {
           // Fired once on mount with the restored session (or null).
+          // On web with detectSessionInUrl=true, this may already include
+          // the session from a PKCE code exchange.
           setSession(s);
           if (s?.user?.id) {
             await fetchProfile(s.user.id);
           }
-          // Loading is resolved — we now know session + profile state.
-          if (mounted) setLoading(false);
+          // Mark INITIAL_SESSION as done — but only resolve loading if
+          // there's no pending URL auth in progress.
+          initialSessionDone.current = true;
+          if (mounted) maybeFinishLoading();
 
         } else if (event === 'SIGNED_IN') {
-          // Fired after a successful sign-in. Profile row may not exist yet
-          // for brand-new users — that's fine, needsOnboarding handles it.
+          // Fired after a successful sign-in (including PKCE exchange).
           setSession(s);
           if (s?.user?.id) {
             await fetchProfile(s.user.id);
           }
+          // SIGNED_IN always resolves loading regardless of other state.
+          initialSessionDone.current = true;
+          pendingUrlAuth.current = false;
           if (mounted) setLoading(false);
 
         } else if (event === 'SIGNED_OUT') {
           setSession(null);
           setProfile(null);
+          initialSessionDone.current = true;
+          pendingUrlAuth.current = false;
           if (mounted) setLoading(false);
 
         } else if (event === 'TOKEN_REFRESHED') {
@@ -132,7 +331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, maybeFinishLoading]);
 
   // ── Auth actions ──────────────────────────────────────────────────────────
   const signInWithGoogle = useCallback(async () => {

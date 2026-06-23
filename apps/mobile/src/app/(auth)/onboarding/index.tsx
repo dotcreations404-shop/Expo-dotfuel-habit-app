@@ -2,12 +2,12 @@
  * Onboarding flow — 5 steps: welcome → personal info → activity → fuel mode → results.
  * Dynamic route: /(auth)/onboarding/[step].tsx
  */
-import { useState, useCallback } from 'react';
-import { View, ScrollView, Pressable, Alert, KeyboardAvoidingView, Modal } from 'react-native';
+import { useState, useCallback, useEffect } from 'react';
+import { View, ScrollView, Pressable, Alert, KeyboardAvoidingView, Modal, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useMutation } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,12 +15,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
-import { ACTIVITY_LEVELS, FUEL_MODES } from '@/lib/types';
+import { ACTIVITY_LEVELS, FUEL_MODES, mapAppToUsersDbMode, mapAppToProfilesDbMode, mapUsersDbToAppMode, mapProfilesDbToAppMode } from '@/lib/types';
 import type { FuelMode, UserProfile } from '@/lib/types';
+
+import { useRouter } from 'expo-router';
 
 export default function Onboarding() {
   const [step, setStep] = useState(0);
-  const { user, setProfileDirect } = useAuth();
+  const { user, profile, needsOnboarding, setProfileDirect } = useAuth();
+  const router = useRouter();
 
   // ── Form state (persisted across steps via useState) ───────────────────────
   const [name, setName] = useState('');
@@ -70,59 +73,203 @@ export default function Onboarding() {
 
   // ── Save profile mutation ──────────────────────────────────────────────────
   const saveMutation = useMutation({
-    mutationFn: async (): Promise<UserProfile> => {
-      console.log('[saveMutation] Upserting profile for user:', user!.id, {
-        email: user!.email,
-        name,
-        age: ageNum,
-        sex,
-        weight_kg: weightKg,
-        height_cm: heightCm,
-        activity_level: activity,
-        fuel_mode: goal,
-        calorie_target: calorieTarget,
-        protein_target: proteinTarget,
-        carbs_target: carbsTarget,
-        fat_target: fatTarget,
-      });
+    mutationFn: async (payload: {
+      id: string;
+      email: string;
+      name: string;
+      age: number;
+      sex: 'male' | 'female';
+      weight_kg: number;
+      height_cm: number;
+      activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
+      fuel_mode: string;
+      calorie_target: number;
+      protein_target: number;
+      carbs_target: number;
+      fat_target: number;
+      water_goal_l: number;
+      water_goal_ml: number;
+    }): Promise<UserProfile> => {
+      console.log('[saveMutation] Initializing database write for payload:', payload);
 
-      const { data, error } = await supabase.from('users').upsert({
-        id: user!.id,
-        email: user!.email,
-        name: name.trim() || 'Athlete',
-        age: ageNum,
-        sex,
-        weight_kg: weightKg,
-        height_cm: heightCm,
-        activity_level: activity,
-        fuel_mode: goal,
-        calorie_target: calorieTarget,
-        protein_target: proteinTarget,
-        carbs_target: carbsTarget,
-        fat_target: fatTarget,
-        water_goal_ml: 3000,
-        streak_days: 0,
-        best_streak: 0,
-        total_logged_days: 0,
-      }, { onConflict: 'id' })
-        .select()
-        .single();
+      try {
+        // 1. Write to profiles table: try UPDATE first, fallback to INSERT if row not found
+        console.log('[saveMutation] Attempting UPDATE on profiles for id:', payload.id);
+        let { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            name: payload.name,
+            age: payload.age,
+            sex: payload.sex,
+            weight_kg: payload.weight_kg,
+            height_cm: payload.height_cm,
+            activity_level: payload.activity_level,
+            fuel_mode: mapAppToProfilesDbMode(payload.fuel_mode),
+            calorie_target: payload.calorie_target,
+            water_goal_l: payload.water_goal_l,
+          })
+          .eq('id', payload.id)
+          .select()
+          .single();
 
-      if (error) {
-        console.error('[saveMutation] Supabase upsert error:', error);
-        throw error;
+        if (profileError && (profileError.code === 'PGRST116' || profileError.message?.includes('rows'))) {
+          console.log('[saveMutation] Profile row not found, attempting INSERT on profiles...');
+          const insertRes = await supabase
+            .from('profiles')
+            .insert({
+              id: payload.id,
+              name: payload.name,
+              age: payload.age,
+              sex: payload.sex,
+              weight_kg: payload.weight_kg,
+              height_cm: payload.height_cm,
+              activity_level: payload.activity_level,
+              fuel_mode: mapAppToProfilesDbMode(payload.fuel_mode),
+              calorie_target: payload.calorie_target,
+              water_goal_l: payload.water_goal_l,
+            })
+            .select()
+            .single();
+          profileData = insertRes.data;
+          profileError = insertRes.error;
+        }
+
+        if (profileError) {
+          console.error('[saveMutation] profiles write error:', profileError);
+          throw profileError;
+        }
+
+        // 2. Write to users table: try UPDATE first, fallback to INSERT if row not found
+        console.log('[saveMutation] Attempting UPDATE on users for id:', payload.id);
+        let { data: userData, error: userError } = await supabase
+          .from('users')
+          .update({
+            email: payload.email,
+            name: payload.name,
+            fuel_mode: mapAppToUsersDbMode(payload.fuel_mode),
+            calorie_target: payload.calorie_target,
+            protein_target: payload.protein_target,
+            carbs_target: payload.carbs_target,
+            fat_target: payload.fat_target,
+            streak_days: 0,
+          })
+          .eq('id', payload.id)
+          .select()
+          .single();
+
+        if (userError && (userError.code === 'PGRST116' || userError.message?.includes('rows'))) {
+          console.log('[saveMutation] User row not found, attempting INSERT on users...');
+          const insertRes = await supabase
+            .from('users')
+            .insert({
+              id: payload.id,
+              email: payload.email,
+              name: payload.name,
+              fuel_mode: mapAppToUsersDbMode(payload.fuel_mode),
+              calorie_target: payload.calorie_target,
+              protein_target: payload.protein_target,
+              carbs_target: payload.carbs_target,
+              fat_target: payload.fat_target,
+              streak_days: 0,
+            })
+            .select()
+            .single();
+          userData = insertRes.data;
+          userError = insertRes.error;
+        }
+
+        if (userError) {
+          console.error('[saveMutation] users write error:', userError);
+          throw userError;
+        }
+
+        const merged: UserProfile = {
+          ...(userData || {}),
+          ...(profileData || {}),
+          id: payload.id,
+        };
+
+        // Map database fuel_mode back to application fuel_mode
+        merged.fuel_mode = mapUsersDbToAppMode(userData?.fuel_mode) || mapProfilesDbToAppMode(profileData?.fuel_mode) || 'balance';
+
+        if (profileData?.water_goal_l !== undefined && profileData?.water_goal_l !== null) {
+          merged.water_goal_ml = Math.round(profileData.water_goal_l * 1000);
+        }
+
+        return merged;
+      } catch (dbError: any) {
+        console.error('[saveMutation] Robust try/catch surfaced DB transaction error:', dbError);
+        throw new Error(dbError?.message || 'Database write transaction failed');
       }
-      return data as UserProfile;
     },
-    onSuccess: (savedProfile: UserProfile) => {
+    onSuccess: async (savedProfile: UserProfile) => {
+      console.log('[saveMutation] Database write successful, updating local React Context...');
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Explicitly update the local user/profile React Context state
       setProfileDirect(savedProfile);
+      
+      // Await context state update entirely before executing final routing switch (using safety fallback timer)
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      router.replace('/(tabs)/(home)');
     },
     onError: (err: Error) => {
-      console.error('[saveMutation] Mutation failed:', err);
-      Alert.alert('Error saving profile', err.message);
+      console.error('[saveMutation] Onboarding mutation failed:', err);
+      if (Platform.OS === 'web') {
+        alert(`Error saving profile: ${err.message}`);
+      } else {
+        Alert.alert('Error saving profile', err.message);
+      }
     },
   });
+
+  // ── Navigation guard to prevent race conditions ───────────────────────────
+  useEffect(() => {
+    // Navigate only once context state has fully updated needsOnboarding to false and profile is hydrated
+    if (saveMutation.isSuccess && !needsOnboarding && profile?.calorie_target) {
+      console.log('[onboarding] Navigation guard: profile successfully hydrated, transitioning to home...');
+      router.replace('/(tabs)/(home)');
+    }
+  }, [profile, needsOnboarding, saveMutation.isSuccess]);
+
+  const handleCompleteOnboarding = () => {
+    if (saveMutation.isPending) return;
+    
+    if (process.env.EXPO_OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    if (!user) {
+      console.error('[onboarding] User object is null in auth context');
+      if (Platform.OS === 'web') {
+        alert('Authentication error: No active user session found.');
+      } else {
+        Alert.alert('Authentication Error', 'No active user session found.');
+      }
+      return;
+    }
+
+    // Compile all fields into a structured payload object
+    const payload = {
+      id: user.id,
+      email: user.email || '',
+      name: name.trim() || 'Athlete',
+      age: ageNum,
+      sex,
+      weight_kg: weightKg,
+      height_cm: heightCm,
+      activity_level: activity,
+      fuel_mode: goal,
+      calorie_target: calorieTarget,
+      protein_target: proteinTarget,
+      carbs_target: carbsTarget,
+      fat_target: fatTarget,
+      water_goal_l: 3.0,
+      water_goal_ml: 3000,
+    };
+
+    saveMutation.mutate(payload);
+  };
 
   const renderStep = () => {
     switch (step) {
@@ -155,8 +302,8 @@ export default function Onboarding() {
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
             <Text style={sectionTitle}>About You</Text>
-            <Field label="Your Name" value={name} onChange={setName} placeholder="What should we call you?" />
-            <Field label="Age" value={age} onChange={setAge} keyboardType="numeric" placeholder="25" />
+            <Field label="Your Name" value={name} onChange={setName} placeholder="What should we call you?" disabled={saveMutation.isPending} />
+            <Field label="Age" value={age} onChange={setAge} keyboardType="numeric" placeholder="25" disabled={saveMutation.isPending} />
             <View style={{ gap: 8 }}>
               <Text style={fieldLabel}>Sex</Text>
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -166,6 +313,7 @@ export default function Onboarding() {
                     <Pressable
                       key={s}
                       onPress={() => {
+                        if (saveMutation.isPending) return;
                         setSex(s);
                         if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
                       }}
@@ -202,8 +350,8 @@ export default function Onboarding() {
         return (
           <Animated.View entering={FadeInDown.duration(400)} style={{ gap: 16 }}>
             <Text style={sectionTitle}>Your Body</Text>
-            <Field label="Weight (kg)" value={weight} onChange={setWeight} keyboardType="decimal-pad" placeholder="70" />
-            <Field label="Height (cm)" value={height} onChange={setHeight} keyboardType="decimal-pad" placeholder="170" />
+            <Field label="Weight (kg)" value={weight} onChange={setWeight} keyboardType="decimal-pad" placeholder="70" disabled={saveMutation.isPending} />
+            <Field label="Height (cm)" value={height} onChange={setHeight} keyboardType="decimal-pad" placeholder="170" disabled={saveMutation.isPending} />
 
             {/* BMR & BMI Badge Panel */}
             {weight && height && (
@@ -313,6 +461,7 @@ export default function Onboarding() {
                     <Pressable
                       key={g.id}
                       onPress={() => {
+                        if (saveMutation.isPending) return;
                         setGoal(g.id);
                         if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
                       }}
@@ -350,6 +499,7 @@ export default function Onboarding() {
                     <Pressable
                       key={act.id}
                       onPress={() => {
+                        if (saveMutation.isPending) return;
                         setActivity(act.id);
                         if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
                       }}
@@ -436,51 +586,51 @@ export default function Onboarding() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: DotFuelColors.black }} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          style={{ flex: 1, backgroundColor: DotFuelColors.black }}
-          contentContainerStyle={{ paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Step pills */}
+      <Animated.View style={{ flex: 1 }} exiting={FadeOut.duration(300)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            style={{ flex: 1, backgroundColor: DotFuelColors.black }}
+            contentContainerStyle={{ paddingBottom: 120 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Step pills */}
+            <View style={{
+              flexDirection: 'row', gap: 5, justifyContent: 'center',
+              paddingTop: 16, paddingHorizontal: Spacing['2xl'], paddingBottom: 24,
+            }}>
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <View key={i} style={{
+                  flex: 1, height: 3, borderRadius: 2,
+                  backgroundColor: i < step
+                    ? DotFuelColors.lime
+                    : i === step
+                    ? 'rgba(194,240,0,0.4)'
+                    : DotFuelColors.surface,
+                }} />
+              ))}
+            </View>
+
+            <View style={{ paddingHorizontal: Spacing['2xl'] }}>
+              {renderStep()}
+            </View>
+          </ScrollView>
+
+          {/* Bottom CTA */}
           <View style={{
-            flexDirection: 'row', gap: 5, justifyContent: 'center',
-            paddingTop: 16, paddingHorizontal: Spacing['2xl'], paddingBottom: 24,
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            paddingHorizontal: Spacing['2xl'], paddingBottom: 36, paddingTop: 12,
+            backgroundColor: DotFuelColors.black,
           }}>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <View key={i} style={{
-                flex: 1, height: 3, borderRadius: 2,
-                backgroundColor: i < step
-                  ? DotFuelColors.lime
-                  : i === step
-                  ? 'rgba(194,240,0,0.4)'
-                  : DotFuelColors.surface,
-              }} />
-            ))}
+            <Button
+              title={saveMutation.isPending ? 'Setting up your ecosystem...' : isLast ? "Let's Go! 🚀" : 'Continue'}
+              loading={saveMutation.isPending}
+              onPress={isLast ? handleCompleteOnboarding : next}
+              disabled={!canContinue || saveMutation.isPending}
+            />
           </View>
 
-          <View style={{ paddingHorizontal: Spacing['2xl'] }}>
-            {renderStep()}
-          </View>
-        </ScrollView>
-
-        {/* Bottom CTA */}
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          paddingHorizontal: Spacing['2xl'], paddingBottom: 36, paddingTop: 12,
-          backgroundColor: DotFuelColors.black,
-        }}>
-          <Button
-            title={saveMutation.isPending ? 'Setting up…' : isLast ? "Let's Go! 🚀" : 'Continue'}
-            onPress={isLast ? () => {
-              if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              saveMutation.mutate();
-            } : next}
-            disabled={!canContinue || saveMutation.isPending}
-          />
-        </View>
-
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -504,8 +654,8 @@ const fieldLabel = {
   marginBottom: 4,
 };
 
-function Field({ label, value, onChange, keyboardType, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void; keyboardType?: any; placeholder?: string;
+function Field({ label, value, onChange, keyboardType, placeholder, disabled }: {
+  label: string; value: string; onChange: (v: string) => void; keyboardType?: any; placeholder?: string; disabled?: boolean;
 }) {
   return (
     <Input
@@ -514,6 +664,7 @@ function Field({ label, value, onChange, keyboardType, placeholder }: {
       onChangeText={onChange}
       keyboardType={keyboardType}
       placeholder={placeholder}
+      editable={!disabled}
     />
   );
 }

@@ -12,9 +12,11 @@ import { useAuth } from '@/contexts/auth-context';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
 import { FUEL_MODES } from '@/lib/types';
 import type { FuelMode } from '@/lib/types';
+import { SpringPressable } from '@/components/ui/spring-pressable';
+import { getApiUrl } from '@/lib/api-helper';
 
 export default function ProfileScreen() {
-  const { profile, signOut } = useAuth();
+  const { profile, session, signOut } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -35,6 +37,47 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleDeleteAccount = () => {
+    const confirmDelete = () => {
+      const token = session?.access_token;
+      if (!token) return;
+
+      fetch(getApiUrl('/api/delete-account'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+      .then(async (res) => {
+        if (res.ok) {
+          Alert.alert('Account Deleted', 'Your account and data have been successfully deleted.');
+          await signOut();
+        } else {
+          const errData = await res.json();
+          Alert.alert('Error', errData.error || 'Failed to delete account.');
+        }
+      })
+      .catch((err) => {
+        Alert.alert('Error', err.message || 'Network error.');
+      });
+    };
+
+    if (Platform.OS === 'web') {
+      const ok = window.confirm('Warning: This action is permanent. All tracked data, streaks, and profile metrics will be entirely destroyed. Are you sure you want to proceed?');
+      if (ok) confirmDelete();
+    } else {
+      Alert.alert(
+        'Delete Account',
+        'Warning: This action is permanent. All tracked data, streaks, and profile metrics will be entirely destroyed.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete Permanent', style: 'destructive', onPress: confirmDelete }
+        ]
+      );
+    }
+  };
+
   const stats = [
     { label: 'Streak', value: `${profile?.streak_days ?? 0}`, emoji: '🔥' },
     { label: 'Best', value: `${profile?.best_streak ?? 0}`, emoji: '⭐' },
@@ -45,6 +88,7 @@ export default function ProfileScreen() {
     { label: 'Edit Profile', emoji: '✏️', route: '/(tabs)/(profile)/edit-profile' },
     { label: 'Connect Apps', emoji: '🔗', route: '/(tabs)/(profile)/connect-apps' },
     { label: 'Support & FAQ', emoji: '💬', route: '/(tabs)/(profile)/support' },
+    { label: 'Legal & Privacy', emoji: '⚖️', route: '/(tabs)/(profile)/legal' },
     { label: 'About DotFuel', emoji: 'ℹ️', route: '/(tabs)/(profile)/about' },
   ];
 
@@ -169,36 +213,41 @@ export default function ProfileScreen() {
       {/* Settings links */}
       <Animated.View entering={FadeInDown.delay(200).duration(400)} style={{
         marginHorizontal: Spacing['2xl'], gap: 6, marginBottom: Spacing.xl,
+        shadowColor: '#1E49CF',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.05,
+        shadowRadius: 16,
+        elevation: 4,
       }}>
         {settingsLinks.map(({ label, emoji, route }) => (
-          <Pressable
+          <SpringPressable
             key={label}
+            haptic="selection"
             onPress={() => router.push(route as any)}
-            style={({ pressed }) => ({
+            style={{
               flexDirection: 'row', alignItems: 'center', gap: 14,
               backgroundColor: DotFuelColors.card, borderRadius: Radius.lg,
               padding: 15, borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-              opacity: pressed ? 0.88 : 1,
-            })}
+            }}
           >
             <Text style={{ fontSize: 18, width: 26, textAlign: 'center' }}>{emoji}</Text>
             <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: DotFuelColors.white }}>
               {label}
             </Text>
             <Text style={{ fontSize: 16, color: DotFuelColors.muted }}>›</Text>
-          </Pressable>
+          </SpringPressable>
         ))}
       </Animated.View>
 
       {/* Sign out */}
-      <View style={{ marginHorizontal: Spacing['2xl'], gap: 10, marginBottom: Spacing['3xl'] }}>
-        <Pressable
+      <View style={{ marginHorizontal: Spacing['2xl'], gap: 10, marginBottom: Spacing.xl }}>
+        <SpringPressable
+          haptic="selection"
           onPress={handleSignOut}
-          style={({ pressed }) => ({
+          style={{
             backgroundColor: DotFuelColors.redLight,
             borderRadius: Radius.lg, paddingVertical: 14, alignItems: 'center',
-            opacity: pressed ? 0.88 : 1,
-          })}
+          }}
         >
           <Text style={{
             fontFamily: 'Inter', fontSize: 13, fontWeight: '800',
@@ -206,8 +255,48 @@ export default function ProfileScreen() {
           }}>
             Sign Out
           </Text>
-        </Pressable>
+        </SpringPressable>
       </View>
+
+      {/* Danger Zone */}
+      <Animated.View entering={FadeInDown.delay(250).duration(400)} style={{
+        marginHorizontal: Spacing['2xl'],
+        marginBottom: Spacing['3xl'],
+        padding: 20,
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        borderRadius: Radius.xl,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.2)',
+      }}>
+        <Text style={{
+          fontSize: 13, fontWeight: '800', color: DotFuelColors.red,
+          textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
+        }}>
+          Danger Zone
+        </Text>
+        <Text style={{
+          fontSize: 11, color: DotFuelColors.muted, fontWeight: '500', marginBottom: 14, lineHeight: 16,
+        }}>
+          Warning: This action is permanent. All tracked data, streaks, and profile metrics will be entirely destroyed.
+        </Text>
+        <SpringPressable
+          haptic="heavy"
+          onPress={handleDeleteAccount}
+          style={{
+            backgroundColor: DotFuelColors.red,
+            borderRadius: Radius.lg,
+            paddingVertical: 12,
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{
+            fontFamily: 'Inter', fontSize: 13, fontWeight: '800',
+            color: DotFuelColors.white, textTransform: 'uppercase', letterSpacing: 0.5,
+          }}>
+            Delete Account
+          </Text>
+        </SpringPressable>
+      </Animated.View>
     </ScrollView>
     </SafeAreaView>
   );

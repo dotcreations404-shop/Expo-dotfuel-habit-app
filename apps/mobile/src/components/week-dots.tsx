@@ -2,21 +2,25 @@
  * Week dots — 7-day streak visualization.
  * Matches webapp: "This Week" section label above dots row.
  */
+import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { DotFuelColors, Spacing } from '@/constants/colors';
 import { fuelScoreColor } from '@/constants/colors';
+import { SpringPressable } from '@/components/ui/spring-pressable';
 
 interface WeekDotsProps {
-  /** Array of 7 days with score percentage (0-100) and isToday flag. */
+  /** Array of 7 days with score percentage (0-100), isToday flag and dateStr. */
   days: Array<{
     label: string;
     scorePct: number;
     isToday: boolean;
+    dateStr: string;
   }>;
+  onPressDay?: (dateStr: string) => void;
 }
 
-export function WeekDots({ days }: WeekDotsProps) {
+export function WeekDots({ days, onPressDay }: WeekDotsProps) {
   return (
     <View style={{ paddingHorizontal: Spacing['2xl'], paddingBottom: Spacing.lg }}>
       {/* "This Week" section label — matches webapp .section-label */}
@@ -32,7 +36,12 @@ export function WeekDots({ days }: WeekDotsProps) {
         {days.map((day, i) => {
           const color = fuelScoreColor(day.scorePct);
           return (
-            <View key={i} style={{ flex: 1, alignItems: 'center', gap: 5 }}>
+            <SpringPressable
+              key={i}
+              haptic="selection"
+              onPress={() => onPressDay?.(day.dateStr)}
+              style={{ flex: 1, alignItems: 'center', gap: 5 }}
+            >
               <Text style={{
                 fontSize: 9, color: DotFuelColors.muted, fontWeight: '800',
                 letterSpacing: 0.5, textTransform: 'uppercase',
@@ -52,7 +61,7 @@ export function WeekDots({ days }: WeekDotsProps) {
                   borderColor: 'rgba(194,240,0,0.6)',
                 } : {}),
               }} />
-            </View>
+            </SpringPressable>
           );
         })}
       </View>

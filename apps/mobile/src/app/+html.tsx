@@ -20,6 +20,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="theme-color" content="#0A0A0A" />
+        <meta name="color-scheme" content="dark" />
         {/*
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
           However, body scrolling is often nice to have for mobile web. If you want to enable it, remove this line.
@@ -31,6 +32,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
           }
           html {
             background-color: #0A0A0A;
+            color-scheme: dark;
             margin: 0;
             padding: 0;
             height: 100%;
@@ -42,10 +44,6 @@ export default function Root({ children }: { children: React.ReactNode }) {
             height: 100%;
             display: flex;
             flex-direction: column;
-            padding-top: env(safe-area-inset-top, 0px);
-            padding-bottom: env(safe-area-inset-bottom, 0px);
-            padding-left: env(safe-area-inset-left, 0px);
-            padding-right: env(safe-area-inset-right, 0px);
           }
           #root {
             background-color: #0A0A0A;

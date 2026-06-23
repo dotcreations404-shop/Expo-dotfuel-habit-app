@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { DotFuelColors, Spacing, Radius } from '@/constants/colors';
-import { ACTIVITY_LEVELS, FUEL_MODES } from '@/lib/types';
+import { ACTIVITY_LEVELS, FUEL_MODES, mapAppToUsersDbMode, mapAppToProfilesDbMode } from '@/lib/types';
 import type { FuelMode } from '@/lib/types';
 
 export default function EditProfileScreen() {
@@ -52,15 +52,31 @@ export default function EditProfileScreen() {
       const fatTarget = Math.round(calorieTarget * 0.25 / 9);
       const carbsTarget = Math.round((calorieTarget - proteinTarget * 4 - fatTarget * 9) / 4);
 
-      const { error } = await supabase
-        .from('users')
+      // 1. Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
         .update({
           name: name.trim() || 'Athlete',
           age: ageNum,
           weight_kg: weightKg,
           height_cm: heightCm,
           activity_level: activity,
-          fuel_mode: mode,
+          fuel_mode: mapAppToProfilesDbMode(mode),
+          calorie_target: calorieTarget,
+        })
+        .eq('id', user!.id);
+
+      if (profileError) {
+        console.error('[saveMutation] profiles update error:', profileError);
+        throw profileError;
+      }
+
+      // 2. Update users table
+      const { error: userError } = await supabase
+        .from('users')
+        .update({
+          name: name.trim() || 'Athlete',
+          fuel_mode: mapAppToUsersDbMode(mode),
           calorie_target: calorieTarget,
           protein_target: proteinTarget,
           carbs_target: carbsTarget,
@@ -68,7 +84,10 @@ export default function EditProfileScreen() {
         })
         .eq('id', user!.id);
 
-      if (error) throw error;
+      if (userError) {
+        console.error('[saveMutation] users update error:', userError);
+        throw userError;
+      }
     },
     onSuccess: async () => {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

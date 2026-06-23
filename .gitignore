@@ -50,3 +50,4 @@ example
 supabase/.temp/
 dist/
 vercel.json
+.env*.local

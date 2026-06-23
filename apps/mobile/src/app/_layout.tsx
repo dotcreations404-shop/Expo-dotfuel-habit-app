@@ -13,6 +13,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, In
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import PwaInstallModal from '@/components/pwa-install-modal';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -95,6 +96,7 @@ function AuthGate() {
           : 'visible') as any,
       }}>
         <Slot />
+        <PwaInstallModal />
       </View>
     </View>
   );

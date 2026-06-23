@@ -3,7 +3,7 @@
  * Emojis: 🥜 💪 ⚡ 🔥 floating around the pulsing lime dot.
  */
 import { useEffect } from 'react';
-import { View, Pressable, useWindowDimensions, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useRouter } from 'expo-router';
 import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
@@ -79,7 +79,6 @@ function FloatingEmoji({ emoji, delay, ...position }: typeof FOOD_FLOATS[number]
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
 
   // Dot pulse animation — matches CSS: scale(1) → scale(1.05) over 2.5s
   const dotScale = useSharedValue(1);
@@ -148,7 +147,7 @@ export default function WelcomeScreen() {
       <Animated.View entering={FadeInDown.delay(200).duration(500)} style={{ alignItems: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{
-            fontFamily: 'Inter', fontSize: Math.min(54, width * 0.13), fontWeight: '900',
+            fontFamily: 'Inter', fontSize: 48, fontWeight: '900',
             color: DotFuelColors.white, textTransform: 'uppercase', letterSpacing: -2,
           }}>
             D
@@ -159,7 +158,7 @@ export default function WelcomeScreen() {
             marginBottom: 4,
           }} />
           <Text style={{
-            fontFamily: 'Inter', fontSize: Math.min(54, width * 0.13), fontWeight: '900',
+            fontFamily: 'Inter', fontSize: 48, fontWeight: '900',
             color: DotFuelColors.white, textTransform: 'uppercase', letterSpacing: -2,
           }}>
             TFUEL

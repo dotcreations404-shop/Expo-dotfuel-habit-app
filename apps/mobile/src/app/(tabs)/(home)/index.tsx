@@ -8,8 +8,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ScrollView, RefreshControl, Pressable, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -24,6 +24,7 @@ import { MacroBars } from '@/components/macro-bars';
 import { WeekDots } from '@/components/week-dots';
 import { MealItem } from '@/components/meal-item';
 import { WaterCard } from '@/components/water-card';
+import { SpringPressable } from '@/components/ui/spring-pressable';
 
 /** Returns YYYY-MM-DD in local timezone. */
 function today(): string {
@@ -57,11 +58,73 @@ function getMealType(): string {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function HomeScreen() {
-  const { profile, user } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
+
+  // ── Historical inspector details state ────────────────────────────────────
+  const [selectedDateDetails, setSelectedDateDetails] = useState<string | null>(null);
+
+  const { data: detailsData, isLoading: loadingDetails } = useQuery({
+    queryKey: ['date-details', user?.id, selectedDateDetails],
+    queryFn: async () => {
+      if (!user?.id || !selectedDateDetails) return null;
+      
+      const { data: log, error: logError } = await supabase
+        .from('daily_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', selectedDateDetails)
+        .maybeSingle();
+        
+      if (logError) throw logError;
+      
+      let mealsList: Meal[] = [];
+      if (log?.id) {
+        const { data: mealsData, error: mealsError } = await supabase
+          .from('meals')
+          .select('*')
+          .eq('daily_log_id', log.id)
+          .order('created_at', { ascending: false });
+        if (mealsError) throw mealsError;
+        mealsList = mealsData as Meal[];
+      }
+      
+      const { data: actData, error: actError } = await supabase
+        .from('activity_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('logged_at', selectedDateDetails)
+        .order('created_at', { ascending: false });
+      if (actError) throw actError;
+      
+      return { log, meals: mealsList, activities: actData };
+    },
+    enabled: !!user?.id && !!selectedDateDetails,
+  });
+
+  const updateWaterGoalMutation = useMutation({
+    mutationFn: async (liters: number) => {
+      if (!user?.id) return;
+      
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ water_goal_l: liters })
+        .eq('id', user.id);
+      if (profileError) throw profileError;
+    },
+    onSuccess: async () => {
+      await refreshProfile();
+      if (dailyLog?.id) {
+        await recalculateAndSaveDailyTotals(dailyLog.id);
+      }
+    },
+    onError: (err) => {
+      Alert.alert('Error updating goal', err.message);
+    }
+  });
 
   const todayStr = today();
   const calorieTarget = profile?.calorie_target ?? 1800;
@@ -120,7 +183,7 @@ export default function HomeScreen() {
   });
 
   // ── Fetch today's meals ────────────────────────────────────────────────────
-  const { data: meals = [] } = useQuery({
+  const { data: meals = [], refetch: refetchMeals } = useQuery({
     queryKey: ['meals', dailyLog?.id],
     queryFn: async () => {
       if (!dailyLog?.id) return [];
@@ -153,7 +216,7 @@ export default function HomeScreen() {
   });
 
   // ── Week data for dots ─────────────────────────────────────────────────────
-  const { data: weekLogs = [] } = useQuery({
+  const { data: weekLogs = [], refetch: refetchWeekLogs } = useQuery({
     queryKey: ['week-logs', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -191,10 +254,21 @@ export default function HomeScreen() {
           ? Math.min(100, Math.round((log.total_calories / calorieTarget) * 100))
           : 0),
         isToday: i === 0,
+        dateStr,
       });
     }
     return result;
   }, [weekLogs, todayStr, calorieTarget]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshProfile();
+      refetchLog();
+      refetchMeals();
+      refetchActivities();
+      refetchWeekLogs();
+    }, [refreshProfile, refetchLog, refetchMeals, refetchActivities, refetchWeekLogs])
+  );
 
   // ── Recalculate & Save Daily Totals Helper ─────────────────────────────────
   const recalculateAndSaveDailyTotals = async (logId: string) => {
@@ -649,12 +723,32 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* ── CALORIE SUMMARY ───────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(150).duration(400)} style={{ marginBottom: Spacing.md }}>
+        <Animated.View 
+          entering={FadeInDown.delay(150).duration(400)} 
+          style={{ 
+            marginBottom: Spacing.md,
+            shadowColor: '#1E49CF',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            elevation: 4,
+          }}
+        >
           <CalorieSummary eaten={eaten} target={calorieTarget} burned={burned} />
         </Animated.View>
 
         {/* ── MACROS ────────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={{ marginBottom: Spacing.md }}>
+        <Animated.View 
+          entering={FadeInDown.delay(200).duration(400)} 
+          style={{ 
+            marginBottom: Spacing.md,
+            shadowColor: '#1E49CF',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            elevation: 4,
+          }}
+        >
           <MacroBars
             protein={{ current: protein, target: proteinTarget }}
             carbs={{ current: carbs, target: carbsTarget }}
@@ -663,25 +757,53 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* ── WEEK DOTS ─────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(250).duration(400)}>
-          <WeekDots days={weekDays} />
+        <Animated.View 
+          entering={FadeInDown.delay(250).duration(400)}
+          style={{
+            shadowColor: '#1E49CF',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            elevation: 4,
+          }}
+        >
+          <WeekDots days={weekDays} onPressDay={setSelectedDateDetails} />
         </Animated.View>
 
         {/* ── WATER ─────────────────────────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(300).duration(400)} style={{ marginBottom: Spacing.md }}>
+        <Animated.View 
+          entering={FadeInDown.delay(300).duration(400)} 
+          style={{ 
+            marginBottom: Spacing.md,
+            shadowColor: '#1E49CF',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            elevation: 4,
+          }}
+        >
           <WaterCard
             currentMl={water}
             goalMl={waterGoal}
             onAdd={(ml) => waterMutation.mutate(ml)}
+            onUpdateGoalLiters={(liters) => updateWaterGoalMutation.mutate(liters)}
           />
         </Animated.View>
 
         {/* ── EXERCISE / ACTIVITIES CARD ────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(320).duration(400)} style={{
-          backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
-          padding: 20, marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md,
-          borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-        }}>
+        <Animated.View 
+          entering={FadeInDown.delay(320).duration(400)} 
+          style={{
+            backgroundColor: DotFuelColors.card, borderRadius: Radius['2xl'],
+            padding: 20, marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md,
+            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+            shadowColor: '#1E49CF',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            elevation: 4,
+          }}
+        >
           {/* Header */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -692,7 +814,8 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Pressable
+              <SpringPressable
+                haptic="selection"
                 onPress={() => syncStrava()}
                 disabled={stravaSyncing}
                 style={{
@@ -703,8 +826,9 @@ export default function HomeScreen() {
                 <Text style={{ fontSize: 11, fontWeight: '800', color: DotFuelColors.strava, textTransform: 'uppercase' }}>
                   {stravaSyncing ? 'Syncing...' : '↻ Strava'}
                 </Text>
-              </Pressable>
-              <Pressable
+              </SpringPressable>
+              <SpringPressable
+                haptic="selection"
                 onPress={() => {
                   setSelectedPreset(presets[0]);
                   setActivityName(presets[0].name);
@@ -718,7 +842,7 @@ export default function HomeScreen() {
                 }}
               >
                 <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.black, lineHeight: 20 }}>+</Text>
-              </Pressable>
+              </SpringPressable>
             </View>
           </View>
 
@@ -809,13 +933,17 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* ── QUICK MEAL ENTRY SECTION ────────────────────────────────── */}
-        <Animated.View entering={FadeInDown.delay(340).duration(400)} style={{
-          marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md
-        }}>
-          <Pressable
+        <Animated.View 
+          layout={LinearTransition}
+          entering={FadeInDown.delay(340).duration(400)} 
+          style={{
+            marginHorizontal: Spacing['2xl'], marginBottom: Spacing.md
+          }}
+        >
+          <SpringPressable
+            haptic="selection"
             onPress={() => {
               setShowQuickMealForm(!showQuickMealForm);
-              if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
             }}
             style={{
               backgroundColor: DotFuelColors.limeLight, borderWidth: 1, borderColor: 'rgba(194,240,0,0.15)',
@@ -825,14 +953,23 @@ export default function HomeScreen() {
             <Text style={{ fontFamily: 'Inter', fontSize: 12, fontWeight: '800', color: DotFuelColors.lime, textTransform: 'uppercase', letterSpacing: 0.5 }}>
               {showQuickMealForm ? '✕ Close Quick Logger' : '✏️ Quick Log Meal / Calories'}
             </Text>
-          </Pressable>
+          </SpringPressable>
 
           {showQuickMealForm && (
-            <Animated.View entering={FadeIn.duration(200)} style={{
-              backgroundColor: DotFuelColors.card, borderRadius: Radius.xl,
-              padding: 16, marginTop: 10, borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-              gap: 10
-            }}>
+            <Animated.View 
+              layout={LinearTransition}
+              entering={FadeIn.duration(200)} 
+              style={{
+                backgroundColor: DotFuelColors.card, borderRadius: Radius.xl,
+                padding: 16, marginTop: 10, borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+                gap: 10,
+                shadowColor: '#1E49CF',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.08,
+                shadowRadius: 16,
+                elevation: 4,
+              }}
+            >
               <TextInput
                 value={quickMealName}
                 onChangeText={setQuickMealName}
@@ -880,19 +1017,20 @@ export default function HomeScreen() {
                   </View>
                 ))}
               </View>
-              <Pressable
+              <SpringPressable
+                haptic="success"
                 onPress={() => quickLogMealMutation.mutate()}
                 disabled={quickLogMealMutation.isPending || !quickMealCals}
-                style={({ pressed }) => ({
+                style={{
                   backgroundColor: DotFuelColors.lime, borderRadius: 12,
                   paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
-                  opacity: pressed ? 0.85 : 1, marginTop: 4
-                })}
+                  marginTop: 4
+                }}
               >
                 <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '900', color: DotFuelColors.black }}>
                   {quickLogMealMutation.isPending ? 'LOGGING...' : 'LOG MEAL →'}
                 </Text>
-              </Pressable>
+              </SpringPressable>
             </Animated.View>
           )}
         </Animated.View>
@@ -912,14 +1050,14 @@ export default function HomeScreen() {
               Today's Meals
             </Text>
 
-            <Pressable
+            <SpringPressable
+              haptic="selection"
               onPress={() => router.push('/(tabs)/(log)')}
-              style={({ pressed }) => ({
+              style={{
                 width: 28, height: 28, borderRadius: 14,
                 backgroundColor: DotFuelColors.lime,
                 alignItems: 'center', justifyContent: 'center',
-                opacity: pressed ? 0.85 : 1,
-              })}
+              }}
             >
               <Text style={{
                 fontFamily: 'Inter', fontSize: 18, fontWeight: '900',
@@ -927,7 +1065,7 @@ export default function HomeScreen() {
               }}>
                 +
               </Text>
-            </Pressable>
+            </SpringPressable>
           </View>
 
           {meals.length > 0 ? (
@@ -1106,6 +1244,132 @@ export default function HomeScreen() {
                 {logActivityMutation.isPending ? 'LOGGING...' : 'LOG ACTIVITY →'}
               </Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── HISTORICAL CALENDAR INSPECTOR MODAL ── */}
+      <Modal
+        visible={!!selectedDateDetails}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedDateDetails(null)}
+      >
+        <View style={{
+          flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+          justifyContent: 'flex-end'
+        }}>
+          <View style={{
+            backgroundColor: DotFuelColors.card,
+            borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            padding: 24, gap: 16,
+            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+            maxHeight: '85%'
+          }}>
+            {/* Grab handle */}
+            <View style={{ width: 40, height: 4, backgroundColor: DotFuelColors.surface, borderRadius: 2, alignSelf: 'center', marginBottom: 4 }} />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View>
+                <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white }}>
+                  📅 LOG HISTORY
+                </Text>
+                <Text style={{ fontSize: 12, color: DotFuelColors.muted, fontWeight: '700', marginTop: 2 }}>
+                  {selectedDateDetails ? new Date(selectedDateDetails).toLocaleDateString('en-IN', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase() : ''}
+                </Text>
+              </View>
+              <SpringPressable haptic="selection" onPress={() => setSelectedDateDetails(null)}>
+                <Text style={{ fontSize: 20, color: DotFuelColors.muted, fontWeight: 'bold', padding: 4 }}>✕</Text>
+              </SpringPressable>
+            </View>
+
+            {loadingDetails ? (
+              <ActivityIndicator size="large" color={DotFuelColors.lime} style={{ paddingVertical: 40 }} />
+            ) : detailsData ? (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 16, paddingBottom: 20 }}>
+                {/* Fuel Score & Calorie Summary Row */}
+                <View style={{ flexDirection: 'row', gap: 12, backgroundColor: DotFuelColors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: DotFuelColors.cardBorder }}>
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>FUEL SCORE</Text>
+                    <Text style={{ fontSize: 32, fontFamily: 'Inter', fontWeight: '900', color: detailsData.log?.fuel_score && detailsData.log.fuel_score >= 85 ? DotFuelColors.lime : detailsData.log?.fuel_score && detailsData.log.fuel_score >= 65 ? DotFuelColors.green : detailsData.log?.fuel_score && detailsData.log.fuel_score >= 40 ? DotFuelColors.blue : DotFuelColors.red, marginTop: 4 }}>
+                      {detailsData.log?.fuel_score ?? 0}
+                    </Text>
+                  </View>
+                  <View style={{ width: 1, height: '80%', backgroundColor: 'rgba(255,255,255,0.06)', alignSelf: 'center' }} />
+                  <View style={{ flex: 2, paddingLeft: 8 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>CALORIES</Text>
+                    <View style={{ gap: 2 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: DotFuelColors.white }}>Eaten: <Text style={{ color: DotFuelColors.lime }}>{detailsData.log?.total_calories ?? 0} kcal</Text></Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: DotFuelColors.white }}>Burned: <Text style={{ color: DotFuelColors.orange }}>{detailsData.log?.active_calories ?? 0} kcal</Text></Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: DotFuelColors.white }}>Water: <Text style={{ color: DotFuelColors.water }}>{((detailsData.log?.water_ml ?? 0) / 1000).toFixed(1)}L</Text></Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Macro Splits */}
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>MACRO SPLITS</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { label: 'Protein', val: `${detailsData.log?.total_protein ?? 0}g`, color: DotFuelColors.blue },
+                      { label: 'Carbs', val: `${detailsData.log?.total_carbs ?? 0}g`, color: DotFuelColors.lime },
+                      { label: 'Fat', val: `${detailsData.log?.total_fat ?? 0}g`, color: DotFuelColors.green },
+                    ].map((macro) => (
+                      <View key={macro.label} style={{ flex: 1, backgroundColor: DotFuelColors.surface, borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: DotFuelColors.cardBorder }}>
+                        <Text style={{ fontSize: 14, fontWeight: '900', color: macro.color }}>{macro.val}</Text>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: DotFuelColors.muted, marginTop: 2 }}>{macro.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Meals logged on that day */}
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Logged Meals</Text>
+                  {detailsData.meals && detailsData.meals.length > 0 ? (
+                    <View style={{ gap: 6 }}>
+                      {detailsData.meals.map((meal: any) => (
+                        <View key={meal.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: DotFuelColors.surface, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: DotFuelColors.cardBorder }}>
+                          <Text style={{ fontSize: 20 }}>{meal.emoji || '🍽️'}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: DotFuelColors.white }}>{meal.name}</Text>
+                            <Text style={{ fontSize: 10, color: DotFuelColors.muted, marginTop: 1 }}>
+                              P: {meal.protein || meal.protein_g || 0}g • C: {meal.carbs || meal.carbs_g || 0}g • F: {meal.fat || meal.fat_g || 0}g
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: DotFuelColors.lime }}>{meal.calories} kcal</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontStyle: 'italic', paddingLeft: 4 }}>No meals logged on this date.</Text>
+                  )}
+                </View>
+
+                {/* Activities logged on that day */}
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: DotFuelColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Logged Activities</Text>
+                  {detailsData.activities && detailsData.activities.length > 0 ? (
+                    <View style={{ gap: 6 }}>
+                      {detailsData.activities.map((act: any) => (
+                        <View key={act.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: DotFuelColors.surface, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: DotFuelColors.cardBorder }}>
+                          <Text style={{ fontSize: 20 }}>{act.emoji || '🏃'}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: DotFuelColors.white }}>{act.name}</Text>
+                            <Text style={{ fontSize: 10, color: DotFuelColors.muted, marginTop: 1 }}>{act.duration_min ? `${act.duration_min} min` : 'Custom'}</Text>
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: DotFuelColors.orange }}>{act.calories_burned} kcal</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 11, color: DotFuelColors.muted, fontStyle: 'italic', paddingLeft: 4 }}>No workouts logged on this date.</Text>
+                  )}
+                </View>
+              </ScrollView>
+            ) : (
+              <Text style={{ fontSize: 13, color: DotFuelColors.muted, textAlign: 'center', paddingVertical: 40 }}>No logs found for this date.</Text>
+            )}
           </View>
         </View>
       </Modal>

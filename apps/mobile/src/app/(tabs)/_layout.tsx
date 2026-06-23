@@ -19,8 +19,8 @@ export default function TabsLayout() {
   if (!session) return <Redirect href="/(auth)" />;
   if (needsOnboarding) return <Redirect href="/(auth)/onboarding" />;
 
-  // Bottom padding: use safe area on iOS/native, fixed on web/Android
-  const tabBarBottomPad = Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 10;
+  // Bottom padding: use safe area on iOS/native & mobile Safari/web, fixed on desktop web/Android
+  const tabBarBottomPad = (Platform.OS === 'ios' || Platform.OS === 'web') ? Math.max(insets.bottom, 10) : 10;
   const tabBarHeight = 56 + tabBarBottomPad;
 
   return (

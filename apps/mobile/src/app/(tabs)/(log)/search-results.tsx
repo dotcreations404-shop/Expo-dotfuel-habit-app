@@ -46,9 +46,88 @@ function parseDescription(desc: string): { cal: number; fat: number; carbs: numb
 
 export default function SearchResultsScreen() {
   const { q } = useLocalSearchParams<{ q: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
+
+  const recalculateAndSaveDailyTotals = async (logId: string) => {
+    try {
+      const todayStr = today();
+      const { data: mealsData } = await supabase
+        .from('meals')
+        .select('calories, protein, carbs, fat')
+        .eq('daily_log_id', logId);
+
+      const eaten = mealsData?.reduce((s, m) => s + (m.calories || 0), 0) || 0;
+      const proteinVal = mealsData?.reduce((s, m) => s + (m.protein || 0), 0) || 0;
+      const carbsVal = mealsData?.reduce((s, m) => s + (m.carbs || 0), 0) || 0;
+      const fatVal = mealsData?.reduce((s, m) => s + (m.fat || 0), 0) || 0;
+
+      const { data: actData } = await supabase
+        .from('activity_entries')
+        .select('calories_burned')
+        .eq('user_id', user!.id)
+        .eq('logged_at', todayStr);
+
+      const activeCals = actData?.reduce((s, a) => s + (a.calories_burned || 0), 0) || 0;
+
+      const { data: curLog } = await supabase
+        .from('daily_logs')
+        .select('water_ml')
+        .eq('id', logId)
+        .single();
+      const water = curLog?.water_ml || 0;
+
+      const calorieTarget = profile?.calorie_target ?? 1800;
+      const proteinTarget = profile?.protein_target ?? 120;
+      const carbsTarget = profile?.carbs_target ?? 200;
+      const fatTarget = profile?.fat_target ?? 60;
+      const waterGoal = profile?.water_goal_ml ?? 3000;
+
+      // Fuel score: multi-factor calculation
+      const calorieScore = eaten > 0 ? Math.min(40, Math.round(40 * (1 - Math.abs(eaten - calorieTarget) / calorieTarget))) : 0;
+      const proteinScore = proteinTarget > 0 ? Math.min(25, Math.round(25 * Math.min(1, proteinVal / proteinTarget))) : 0;
+      const waterScore = waterGoal > 0 ? Math.min(20, Math.round(20 * Math.min(1, water / waterGoal))) : 0;
+      const activityScore = activeCals > 0 ? Math.min(15, Math.round(15 * Math.min(1, activeCals / 300))) : 0;
+      const score = Math.max(0, calorieScore + proteinScore + waterScore + activityScore);
+      const dotColor = score >= 85 ? 'lime' : score >= 65 ? 'green' : score >= 40 ? 'blue' : 'red';
+
+      await supabase
+        .from('daily_logs')
+        .update({
+          total_calories: eaten,
+          total_protein: proteinVal,
+          total_carbs: carbsVal,
+          total_fat: fatVal,
+          active_calories: activeCals,
+          fuel_score: score,
+          dot_color: dotColor,
+        })
+        .eq('id', logId);
+
+      // Trigger Vol3 Water Sync if appropriate
+      const isHydrated = water >= 4000;
+      const { data: vol3Part } = await supabase
+        .from('challenge_vol3_participants')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (vol3Part && isHydrated) {
+        await supabase
+          .from('challenge_vol3_daily_progress')
+          .upsert({
+            user_id: user!.id,
+            log_date: todayStr,
+            water_synced_override: true,
+          }, { onConflict: 'user_id,log_date' });
+      }
+
+    } catch (err) {
+      console.warn('[recalculate] Failed to update daily log:', err);
+    }
+  };
 
   const [results, setResults] = useState<FoodResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,32 +168,21 @@ export default function SearchResultsScreen() {
       }
 
       // Insert meal
-      await supabase.from('meals').insert({
+      const { error: mealErr } = await supabase.from('meals').insert({
         user_id: user!.id,
         daily_log_id: logId,
         name: food.food_name,
         emoji: '🍽️',
         calories: Math.round(cal),
-        protein_g: Math.round(protein),
-        carbs_g: Math.round(carbs),
-        fat_g: Math.round(fat),
+        protein: Math.round(protein),
+        carbs: Math.round(carbs),
+        fat: Math.round(fat),
         serving_size: serving,
-        source: 'fatsecret',
-        meal_type: getMealType(),
+        meal_time: getMealType(),
       });
+      if (mealErr) throw mealErr;
 
-      // Update totals
-      const { data: log } = await supabase.from('daily_logs')
-        .select('total_calories, total_protein, total_carbs, total_fat')
-        .eq('id', logId).single();
-      if (log) {
-        await supabase.from('daily_logs').update({
-          total_calories: (log.total_calories || 0) + Math.round(cal),
-          total_protein: (log.total_protein || 0) + Math.round(protein),
-          total_carbs: (log.total_carbs || 0) + Math.round(carbs),
-          total_fat: (log.total_fat || 0) + Math.round(fat),
-        }).eq('id', logId);
-      }
+      await recalculateAndSaveDailyTotals(logId);
     },
     onSuccess: () => {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

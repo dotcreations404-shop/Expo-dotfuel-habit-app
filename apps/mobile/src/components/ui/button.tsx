@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, PressableProps, StyleSheet, ViewStyle, StyleProp, TextStyle } from 'react-native';
+import { Pressable, PressableProps, StyleSheet, ViewStyle, StyleProp, TextStyle, ActivityIndicator } from 'react-native';
 import { Text } from './text';
 import { DotFuelColors } from '@/constants/colors';
 
@@ -14,6 +14,8 @@ export interface ButtonProps extends PressableProps {
   textStyle?: StyleProp<TextStyle>;
   /** Disable the button interaction and lower opacity */
   disabled?: boolean;
+  /** Show an ActivityIndicator and disable the button */
+  loading?: boolean;
 }
 
 /**
@@ -21,22 +23,28 @@ export interface ButtonProps extends PressableProps {
  * Matches `.btn-primary` and `.btn-ghost` from the reference HTML.
  */
 export const Button = React.forwardRef<any, ButtonProps>(
-  ({ title, variant = 'primary', style, textStyle, disabled, children, ...props }, ref) => {
+  ({ title, variant = 'primary', style, textStyle, disabled, loading, children, ...props }, ref) => {
+    const showDisabled = disabled || loading;
     
     return (
       <Pressable
         ref={ref}
-        disabled={disabled}
+        disabled={showDisabled}
         style={({ pressed }) => [
           styles.base,
           variant === 'primary' ? styles.primary : styles.ghost,
-          disabled && styles.disabled,
-          pressed && !disabled && styles.pressed,
+          showDisabled && styles.disabled,
+          pressed && !showDisabled && styles.pressed,
           style,
         ]}
         {...props}
       >
-        {title ? (
+        {loading ? (
+          <ActivityIndicator
+            size="small"
+            color={variant === 'primary' ? DotFuelColors.black : DotFuelColors.lime}
+          />
+        ) : title ? (
           <Text
             style={[
               variant === 'primary' ? styles.primaryText : styles.ghostText,

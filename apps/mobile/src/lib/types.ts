@@ -49,13 +49,17 @@ export interface Meal {
   name: string;
   emoji?: string;
   calories: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  fiber?: number;
   protein_g?: number;
   carbs_g?: number;
   fat_g?: number;
   fiber_g?: number;
   serving_size?: string;
+  meal_time?: string;
   meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  source?: string; // 'manual' | 'fatsecret' | 'ai' | 'barcode' | 'voice' | 'photo'
   photo_url?: string;
   created_at?: string;
 }
@@ -135,6 +139,46 @@ export const FUEL_MODES: Record<FuelMode, { label: string; emoji: string; tag: s
   clean: { label: 'Clean', emoji: '🥗', tag: 'clean', color: '#00E87A' },
   perform: { label: 'Perform', emoji: '⚡', tag: 'perform', color: '#FF8C00' },
 };
+
+export function mapAppToUsersDbMode(appMode: string | undefined): string {
+  if (appMode === 'cut') return 'burn';
+  if (appMode === 'lean') return 'build';
+  if (appMode === 'clean') return 'reset';
+  if (appMode === 'perform') return 'perform';
+  if (appMode === 'balance') return 'balance';
+  return 'balance';
+}
+
+export function mapAppToProfilesDbMode(appMode: string | undefined): string {
+  if (appMode === 'cut') return 'lean_down';
+  if (appMode === 'lean') return 'bulk_up';
+  if (appMode === 'clean') return 'clean_eat';
+  if (appMode === 'perform') return 'performance';
+  if (appMode === 'balance') return 'maintain';
+  return 'maintain';
+}
+
+export function mapUsersDbToAppMode(dbMode: string | undefined): FuelMode {
+  if (dbMode === 'burn') return 'cut';
+  if (dbMode === 'build') return 'lean';
+  if (dbMode === 'reset') return 'clean';
+  if (dbMode === 'perform') return 'perform';
+  if (dbMode === 'balance') return 'balance';
+  // Fallbacks
+  if (dbMode === 'cut' || dbMode === 'lean' || dbMode === 'clean') return dbMode;
+  return 'balance';
+}
+
+export function mapProfilesDbToAppMode(dbMode: string | undefined): FuelMode {
+  if (dbMode === 'lean_down') return 'cut';
+  if (dbMode === 'bulk_up') return 'lean';
+  if (dbMode === 'clean_eat') return 'clean';
+  if (dbMode === 'performance') return 'perform';
+  if (dbMode === 'maintain') return 'balance';
+  // Fallbacks
+  if (dbMode === 'cut' || dbMode === 'lean' || dbMode === 'clean' || dbMode === 'balance' || dbMode === 'perform') return dbMode as FuelMode;
+  return 'balance';
+}
 
 export const ACTIVITY_LEVELS = [
   { id: 'sedentary', label: 'Sedentary', emoji: '🪑', desc: 'Little or no exercise', mult: 1.2 },

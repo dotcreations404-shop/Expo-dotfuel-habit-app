@@ -1,14 +1,13 @@
-/**
- * FatSecret API — food database search and barcode lookup.
- * Replaces: webapp/netlify/functions/fatsecret.js
- */
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+const setCorsHeaders = (res: VercelResponse) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 };
 
 let cachedToken: { token: string; expires: number } | null = null;
+const queryCache = new Map<string, any>();
 
 async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expires) {
@@ -23,14 +22,14 @@ async function getAccessToken(): Promise<string> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
     },
     body: 'grant_type=client_credentials&scope=basic',
   });
 
   if (!response.ok) throw new Error(`OAuth failed: ${response.status}`);
 
-  const data = await response.json();
+  const data = (await response.json()) as any;
   cachedToken = {
     token: data.access_token,
     expires: Date.now() + (data.expires_in - 60) * 1000,
@@ -38,7 +37,6 @@ async function getAccessToken(): Promise<string> {
 
   return data.access_token;
 }
-const queryCache = new Map<string, any>();
 
 async function getClaudeFallbackSearch(q: string, apiKey: string) {
   const content = [
@@ -93,23 +91,20 @@ Do not include any extra explanation or markdown. Return only the JSON object.`,
   return JSON.parse(cleanJson);
 }
 
-export function OPTIONS() {
-  return new Response(null, { headers: corsHeaders });
-}
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  setCorsHeaders(res);
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const action = url.searchParams.get('action') ?? 'search';
-  const query = url.searchParams.get('q') ?? '';
-  const barcode = url.searchParams.get('barcode') ?? '';
-  const foodId = url.searchParams.get('food_id') ?? '';
-  const page = url.searchParams.get('page') ?? '0';
-  const cacheKey = query.trim().toLowerCase();
+  const { action = 'search', q = '', barcode = '', food_id = '', page = '0' } = req.query as Record<string, string>;
+  const cacheKey = q.trim().toLowerCase();
 
   if (action === 'search' && cacheKey) {
     if (queryCache.has(cacheKey)) {
       console.log('[fatsecret] serving search from memory cache:', cacheKey);
-      return Response.json(queryCache.get(cacheKey), { headers: corsHeaders });
+      return res.status(200).json(queryCache.get(cacheKey));
     }
   }
 
@@ -117,17 +112,13 @@ export async function GET(request: Request) {
     const token = await getAccessToken();
 
     let apiUrl: string;
-    let method: string;
-
     if (action === 'barcode' && barcode) {
       apiUrl = `https://platform.fatsecret.com/rest/food/barcode/find-by-id/v1?barcode=${barcode}&format=json`;
-      method = 'foods.find_id_for_barcode';
-    } else if (action === 'detail' && foodId) {
-      apiUrl = `https://platform.fatsecret.com/rest/food/v4?food_id=${foodId}&format=json`;
-      method = 'food.get.v4';
+    } else if (action === 'detail' && (food_id || req.query.foodId)) {
+      const id = food_id || (req.query.foodId as string) || '';
+      apiUrl = `https://platform.fatsecret.com/rest/food/v4?food_id=${id}&format=json`;
     } else {
-      apiUrl = `https://platform.fatsecret.com/rest/foods/search/v1?search_expression=${encodeURIComponent(query)}&page_number=${page}&max_results=15&format=json`;
-      method = 'foods.search';
+      apiUrl = `https://platform.fatsecret.com/rest/foods/search/v1?search_expression=${encodeURIComponent(q)}&page_number=${page}&max_results=15&format=json`;
     }
 
     const response = await fetch(apiUrl, {
@@ -137,31 +128,31 @@ export async function GET(request: Request) {
     if (!response.ok) {
       const errText = await response.text();
       console.error('[fatsecret]', response.status, errText.slice(0, 200));
-      return Response.json({ error: `FatSecret API error: ${response.status}` }, { status: 502, headers: corsHeaders });
+      throw new Error(`FatSecret API error: ${response.status}`);
     }
 
     const data = await response.json();
     if (action === 'search' && cacheKey) {
       queryCache.set(cacheKey, data);
     }
-    return Response.json(data, { headers: corsHeaders });
+    return res.status(200).json(data);
   } catch (err: any) {
     console.error('[fatsecret] error, attempting Claude fallback:', err.message);
     
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (action === 'search' && query && anthropicKey) {
+    if (action === 'search' && q && anthropicKey) {
       try {
-        const fallbackResult = await getClaudeFallbackSearch(query, anthropicKey);
+        const fallbackResult = await getClaudeFallbackSearch(q, anthropicKey);
         if (cacheKey) {
           queryCache.set(cacheKey, fallbackResult);
         }
-        return Response.json(fallbackResult, { headers: corsHeaders });
+        return res.status(200).json(fallbackResult);
       } catch (fallbackErr: any) {
         console.error('[fatsecret] Claude fallback failed:', fallbackErr.message);
-        return Response.json({ error: fallbackErr.message }, { status: 500, headers: corsHeaders });
+        return res.status(500).json({ error: fallbackErr.message });
       }
     }
     
-    return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
+    return res.status(500).json({ error: err.message });
   }
 }
