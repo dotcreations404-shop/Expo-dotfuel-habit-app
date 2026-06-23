@@ -432,7 +432,32 @@ export default function LogScreen() {
           </Text>
         </View>
 
-
+        {/* Search Bar */}
+        <View style={{ marginHorizontal: Spacing['2xl'], marginBottom: Spacing.lg }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: DotFuelColors.card, borderRadius: Radius.lg,
+            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+            paddingHorizontal: 14, height: 50,
+          }}>
+            <Text style={{ fontSize: 16, marginRight: 8 }}>🔍</Text>
+            <TextInput
+              placeholder="Search food database..."
+              placeholderTextColor={DotFuelColors.muted}
+              returnKeyType="search"
+              onSubmitEditing={(e) => {
+                const query = e.nativeEvent.text.trim();
+                if (query) {
+                  router.push({ pathname: '/(tabs)/(log)/search-results', params: { q: query } });
+                }
+              }}
+              style={[{
+                flex: 1, color: DotFuelColors.white, fontSize: 15, fontFamily: 'Inter',
+                padding: 0,
+              }, Platform.OS === 'web' && { outlineStyle: 'none' } as any]}
+            />
+          </View>
+        </View>
             {/* Method cards */}
             <View style={{
               flexDirection: 'row', flexWrap: 'wrap',
