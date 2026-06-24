@@ -224,7 +224,7 @@ export default function ChallengesScreen() {
           supabase.from('users').select('id, name').in('id', ids),
           supabase.from('profiles').select('id, name').in('id', ids),
           supabase.from('challenge_vol3_daily_progress')
-            .select('user_id, log_date, is_calculated_success, revival_applied')
+            .select('user_id, log_date, is_calculated_success, revival_applied, clean_meals, workout, read_page, water_synced_override, custom_task_done')
             .in('user_id', ids)
             .order('log_date', { ascending: false }),
         ]);
@@ -243,37 +243,24 @@ export default function ChallengesScreen() {
           progressByUser.get(row.user_id)!.push(row);
         });
 
-        // Calculate streak: count consecutive days where
-        // is_calculated_success=true OR revival_applied=true
+        // Count total completed days (matching Dot Matrix filled dots)
+        // A day is completed when: complianceCount >= 4 OR is_calculated_success OR revival_applied
         const computeStreak = (rows: typeof allProgress): number => {
           if (!rows || rows.length === 0) return 0;
-          const dateSet = new Map<string, boolean>();
+          const todayStr = new Date().toISOString().split('T')[0];
+          let count = 0;
           rows.forEach(r => {
-            dateSet.set(r.log_date, !!(r.is_calculated_success || r.revival_applied));
+            if (r.log_date > todayStr) return;
+            let complianceCount = 0;
+            if (r.clean_meals) complianceCount++;
+            if (r.workout) complianceCount++;
+            if (r.read_page) complianceCount++;
+            if (r.water_synced_override) complianceCount++;
+            if (r.custom_task_done) complianceCount++;
+            const isCompleted = complianceCount >= 4 || r.is_calculated_success || r.revival_applied;
+            if (isCompleted) count++;
           });
-
-          let streak = 0;
-          const now = new Date();
-          const checkDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-          const todayKey = checkDate.toISOString().split('T')[0];
-          if (dateSet.has(todayKey) && dateSet.get(todayKey)) {
-            streak++;
-            checkDate.setDate(checkDate.getDate() - 1);
-          } else {
-            checkDate.setDate(checkDate.getDate() - 1);
-          }
-
-          while (true) {
-            const key = checkDate.toISOString().split('T')[0];
-            if (dateSet.has(key) && dateSet.get(key)) {
-              streak++;
-              checkDate.setDate(checkDate.getDate() - 1);
-            } else {
-              break;
-            }
-          }
-          return streak;
+          return count;
         };
 
         const leaderboardData = ids.map(id => {
