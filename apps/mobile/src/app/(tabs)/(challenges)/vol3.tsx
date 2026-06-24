@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image, Modal, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import Animated, { 
   FadeInDown, 
   FadeIn, 
@@ -144,15 +144,18 @@ export default function Vol3ChallengeScreen() {
     setDaysLeft(diff);
   }, []);
 
-  useEffect(() => {
-    if (!authLoading) {
-      if (user) {
-        loadInitialData();
-      } else {
-        setLoading(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!authLoading) {
+        if (user) {
+          const isSilent = !loading;
+          loadInitialData(isSilent);
+        } else {
+          setLoading(false);
+        }
       }
-    }
-  }, [user, authLoading]);
+    }, [user, authLoading, loading])
+  );
 
   useEffect(() => {
     if (participant) {
@@ -164,8 +167,8 @@ export default function Vol3ChallengeScreen() {
     };
   }, [participant]);
 
-  const loadInitialData = async () => {
-    setLoading(true);
+  const loadInitialData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('challenge_vol3_participants')
@@ -180,7 +183,7 @@ export default function Vol3ChallengeScreen() {
     } catch (err) {
       console.log('Error loading participant', err);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const loadDashboardData = async () => {
@@ -449,6 +452,9 @@ export default function Vol3ChallengeScreen() {
         console.log('Error upserting daily progress', error);
         // Rollback on error
         setTasks(prev => ({ ...prev, [key]: !nextVal }));
+        loadDashboardData();
+      } else {
+        // Sync leaderboard and streak_days immediately
         loadDashboardData();
       }
     } catch (err) {

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, ScrollView, TextInput, Pressable, KeyboardAvoidingView, ActivityIndicator, Image, Modal, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import Animated, { 
   FadeInDown, 
   FadeIn, 
@@ -140,15 +140,18 @@ export default function ChallengesScreen() {
     setDaysLeft(diff);
   }, []);
 
-  useEffect(() => {
-    if (!authLoading) {
-      if (user) {
-        loadParticipant();
-      } else {
-        setCheckingParticipant(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!authLoading) {
+        if (user) {
+          const isSilent = !checkingParticipant;
+          loadParticipant(isSilent);
+        } else {
+          setCheckingParticipant(false);
+        }
       }
-    }
-  }, [user, authLoading]);
+    }, [user, authLoading, checkingParticipant])
+  );
 
   useEffect(() => {
     if (participant && participant.status === 'active') {
@@ -160,8 +163,8 @@ export default function ChallengesScreen() {
     };
   }, [participant]);
 
-  const loadParticipant = async () => {
-    setCheckingParticipant(true);
+  const loadParticipant = async (silent = false) => {
+    if (!silent) setCheckingParticipant(true);
     try {
       const { data, error } = await supabase
         .from('challenge_vol3_participants')
@@ -180,7 +183,7 @@ export default function ChallengesScreen() {
       console.log('Error loading participant in Challenges index', err);
       setParticipant(null);
     }
-    setCheckingParticipant(false);
+    if (!silent) setCheckingParticipant(false);
   };
 
   const loadDashboardData = async () => {
@@ -413,6 +416,9 @@ export default function ChallengesScreen() {
       if (error) {
         console.log('Error upserting daily progress', error);
         setTasks(prev => ({ ...prev, [key]: !nextVal }));
+        loadDashboardData();
+      } else {
+        // Sync leaderboard and streak_days immediately
         loadDashboardData();
       }
     } catch (err) {

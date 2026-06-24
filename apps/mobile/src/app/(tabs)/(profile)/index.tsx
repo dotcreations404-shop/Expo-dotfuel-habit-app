@@ -1,9 +1,7 @@
-/**
- * Profile screen — user stats, badges, mode selector, settings links.
- */
+import React, { useCallback } from 'react';
 import { View, ScrollView, Pressable, Alert, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,9 +14,15 @@ import { SpringPressable } from '@/components/ui/spring-pressable';
 import { getApiUrl } from '@/lib/api-helper';
 
 export default function ProfileScreen() {
-  const { profile, session, signOut } = useAuth();
+  const { profile, session, signOut, refreshProfile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshProfile();
+    }, [refreshProfile])
+  );
 
   const mode = (profile?.fuel_mode || 'balance') as FuelMode;
   const modeInfo = FUEL_MODES[mode] ?? FUEL_MODES.balance;
