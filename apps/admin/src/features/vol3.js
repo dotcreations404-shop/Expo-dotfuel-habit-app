@@ -92,7 +92,10 @@ function renderVol3Table() {
         <td><div style="font-size:11px;color:var(--muted);max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(p.cut_list || []).join(', ')}">${p.cut_list && p.cut_list.length ? p.cut_list.join(', ') : 'None'}</div></td>
         <td style="color:var(--muted)">${dateStr}</td>
         <td style="text-align:right">
-          <button onclick="openVol3EditModal('${p.user_id}')" style="background:var(--surface);border:1px solid var(--border);color:#fff;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;">Edit</button>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button onclick="syncUserStreak('${p.user_id}')" style="background:rgba(194,240,0,0.1);border:1px solid rgba(194,240,0,0.25);color:var(--lime);padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;">Sync</button>
+            <button onclick="openVol3EditModal('${p.user_id}')" style="background:var(--surface);border:1px solid var(--border);color:#fff;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;">Edit</button>
+          </div>
         </td>
       </tr>
     `;
@@ -164,11 +167,17 @@ async function sendVol3Broadcast() {
   
   if (!title || !body) return alert('Title and Message are required.');
 
-  // NOTE: Insert integration to existing push endpoint (e.g., Supabase Edge Function)
-  // Example: await sb.functions.invoke('send-push', { body: { audience: 'all_vol3_active', title, message: body } })
-  
-  console.log('BROADCAST PUSH DISPATCHED:', { title, body, audience: 'all' });
-  alert('Broadcast push initiated. (Edge Function integration required)');
+  showToast('📢 Sending broadcast...');
+  try {
+    const { data: result, error } = await sb.functions.invoke('send-push', {
+      body: { audience: 'all_vol3_active', title, message: body }
+    });
+    if (error) throw error;
+    if (result && result.error) throw new Error(result.error);
+    showToast('✓ Broadcast sent successfully');
+  } catch (err) {
+    alert('Failed to send broadcast: ' + err.message);
+  }
   closeVol3PushModal();
 }
 
@@ -181,11 +190,18 @@ async function sendVol3DirectPush() {
   const body = prompt("Enter Message Body:");
   if (!body) return;
 
-  // NOTE: Insert integration to existing push endpoint for a single user
-  // Example: await sb.functions.invoke('send-push', { body: { user_id: userId, title, message: body } })
-
-  console.log('DIRECT PUSH DISPATCHED:', { title, body, user_id: userId });
-  alert('Direct push sent to user ' + userId + '. (Edge Function integration required)');
+  showToast('💬 Sending direct notification...');
+  try {
+    const { data: result, error } = await sb.functions.invoke('send-push', {
+      body: { userId, title, message: body }
+    });
+    if (error) throw error;
+    if (result && result.error) throw new Error(result.error);
+    showToast('✓ Direct push sent');
+    closeVol3EditModal();
+  } catch (err) {
+    alert('Failed to send push: ' + err.message);
+  }
 }
 window.loadVol3Participants = loadVol3Participants;
 window.renderVol3Table = renderVol3Table;

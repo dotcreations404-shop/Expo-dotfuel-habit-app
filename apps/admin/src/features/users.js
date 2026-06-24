@@ -76,7 +76,10 @@ function renderUsers(users) {
 
     const actions = isAdmin
       ? `<span style="font-size:11px;color:var(--muted)">Protected</span>`
-      : `<button class="del-btn" onclick="confirmDeleteUser('${u.id}','${(u.email||name).replace(/'/g,"\\'")}')">Delete</button>`;
+      : `<div class="action-btns">
+           <button class="edit-btn" style="background:rgba(194,240,0,0.1);color:var(--lime)" onclick="syncUserStreak('${u.id}')">Sync</button>
+           <button class="del-btn" onclick="confirmDeleteUser('${u.id}','${(u.email||name).replace(/'/g,"\\'")}')">Delete</button>
+         </div>`;
 
     return `<tr>
       <td>
@@ -149,9 +152,36 @@ async function doDeleteUser(userId, identifier) {
 }
 
 
+async function syncUserStreak(userId) {
+  showToast('🔄 SYNCING USER DATA...');
+  try {
+    const { data: result, error } = await sb.functions.invoke('sync-user', {
+      body: { userId }
+    });
+    if (error) throw new Error(error.message || 'Sync failed');
+    if (result && result.error) throw new Error(result.error);
+    
+    showToast(`✓ Sync complete: 🔥 ${result.streak_days}`);
+    
+    // Update local cache and re-render
+    const u = usersData.find(x => x.id === userId);
+    if (u) {
+      u.streak_days = result.streak_days;
+      renderUsers(usersData);
+    }
+    
+    if (typeof loadVol3Participants === 'function') {
+      loadVol3Participants();
+    }
+  } catch (err) {
+    showToast('❌ Sync failed: ' + err.message);
+  }
+}
+
 window.getAdminHeaders = getAdminHeaders;
 window.loadUsers = loadUsers;
 window.renderUsers = renderUsers;
 window.confirmDeleteUser = confirmDeleteUser;
 window.toggleProUser = toggleProUser;
 window.doDeleteUser = doDeleteUser;
+window.syncUserStreak = syncUserStreak;
