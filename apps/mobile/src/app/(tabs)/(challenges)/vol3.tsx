@@ -220,22 +220,71 @@ export default function Vol3ChallengeScreen() {
       const { data: parts } = await supabase.from('challenge_vol3_participants').select('user_id').eq('status', 'active');
       if (parts && parts.length > 0) {
         const ids = parts.map(p => p.user_id);
-        const [usersRes, profilesRes] = await Promise.all([
-          supabase.from('users').select('id, name, streak_days').in('id', ids),
-          supabase.from('profiles').select('id, name').in('id', ids)
+        const [usersRes, profilesRes, allProgressRes] = await Promise.all([
+          supabase.from('users').select('id, name').in('id', ids),
+          supabase.from('profiles').select('id, name').in('id', ids),
+          supabase.from('challenge_vol3_daily_progress')
+            .select('user_id, log_date, is_calculated_success, revival_applied')
+            .in('user_id', ids)
+            .order('log_date', { ascending: false }),
         ]);
 
         const users = usersRes.data || [];
         const profiles = profilesRes.data || [];
+        const allProgress = allProgressRes.data || [];
 
         const userMap = new Map(users.map(u => [u.id, u]));
         const profileMap = new Map(profiles.map(p => [p.id, p]));
+
+        // Group progress rows by user
+        const progressByUser = new Map<string, typeof allProgress>();
+        allProgress.forEach(row => {
+          if (!progressByUser.has(row.user_id)) progressByUser.set(row.user_id, []);
+          progressByUser.get(row.user_id)!.push(row);
+        });
+
+        // Calculate streak: count consecutive days (from yesterday backwards) where
+        // is_calculated_success=true OR revival_applied=true
+        const computeStreak = (rows: typeof allProgress): number => {
+          if (!rows || rows.length === 0) return 0;
+          // rows are sorted desc by log_date already
+          const dateSet = new Map<string, boolean>();
+          rows.forEach(r => {
+            dateSet.set(r.log_date, !!(r.is_calculated_success || r.revival_applied));
+          });
+
+          let streak = 0;
+          const now = new Date();
+          // Start from today and walk backwards
+          const checkDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+          // Check today first — if today's entry exists and is successful, count it
+          const todayKey = checkDate.toISOString().split('T')[0];
+          if (dateSet.has(todayKey) && dateSet.get(todayKey)) {
+            streak++;
+            checkDate.setDate(checkDate.getDate() - 1);
+          } else {
+            // Today might not be logged yet, start from yesterday
+            checkDate.setDate(checkDate.getDate() - 1);
+          }
+
+          while (true) {
+            const key = checkDate.toISOString().split('T')[0];
+            if (dateSet.has(key) && dateSet.get(key)) {
+              streak++;
+              checkDate.setDate(checkDate.getDate() - 1);
+            } else {
+              break;
+            }
+          }
+          return streak;
+        };
 
         const leaderboardData = ids.map(id => {
           const u = userMap.get(id);
           const p = profileMap.get(id);
           const name = u?.name?.trim() || p?.name?.trim() || 'Athlete';
-          const streak_days = u?.streak_days || 0;
+          const streak_days = computeStreak(progressByUser.get(id) || []);
           return {
             id,
             name,
@@ -245,6 +294,10 @@ export default function Vol3ChallengeScreen() {
 
         const sorted = leaderboardData.sort((a, b) => b.streak_days - a.streak_days);
         setLeaderboard(sorted);
+
+        // Also sync current user's streak_days to users table
+        const myStreak = sorted.find(s => s.id === user.id)?.streak_days ?? 0;
+        supabase.from('users').update({ streak_days: myStreak }).eq('id', user.id).then(() => {});
       }
 
       // Fetch Chat Messages
