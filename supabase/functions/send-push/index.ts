@@ -37,26 +37,44 @@ serve(async (req) => {
   // Verify Admin credentials (x-admin-key or Authorization Bearer token)
   let isAdmin = false;
   const adminKey = req.headers.get('x-admin-key');
+  let authDebug = '';
   
-  if (adminKey && adminKey === ADMIN_SECRET_KEY) {
+  if (adminKey && ADMIN_SECRET_KEY && adminKey === ADMIN_SECRET_KEY) {
     isAdmin = true;
+    authDebug = 'admin-key match';
   } else {
     const authHeader = req.headers.get('authorization');
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       try {
         const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-        if (!authErr && user && user.email === 'dotcreations404@gmail.com') {
-          isAdmin = true;
+        if (authErr) {
+          authDebug = `auth error: ${authErr.message}`;
+          console.warn('supabase.auth.getUser error:', authErr.message);
+        } else if (!user) {
+          authDebug = 'no user found for token';
+        } else {
+          authDebug = `user email: ${user.email}`;
+          if (user.email === 'dotcreations404@gmail.com') {
+            isAdmin = true;
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
+        authDebug = `auth exception: ${err.message}`;
         console.warn('Auth token verification exception:', err);
       }
+    } else {
+      authDebug = 'no bearer token in authorization header';
     }
   }
 
   if (!isAdmin) {
-    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+    return new Response(JSON.stringify({ 
+      error: 'Forbidden', 
+      debug: authDebug,
+      hasAdminKey: !!adminKey,
+      hasAdminSecret: !!ADMIN_SECRET_KEY
+    }), {
       status: 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

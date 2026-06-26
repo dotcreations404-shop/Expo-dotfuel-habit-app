@@ -27,6 +27,14 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const showAlert = (title: string, message: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}: ${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
 function parseDescription(desc: string): { cal: number; fat: number; carbs: number; protein: number; serving: string } {
   const serving = desc.split(' - ')[0] || '';
   const cal = parseFloat(desc.match(/Calories:\s*([\d.]+)/)?.[1] || '0');
@@ -52,8 +60,6 @@ const QUICK_FOODS = [
   { emoji: '🥛', name: 'Milk (250ml)', cal: 150, p: 8, c: 12, f: 8 },
   { emoji: '🥜', name: 'Peanuts (30g)', cal: 170, p: 7, c: 5, f: 14 },
 ];
-
-
 
 export default function LogScreen() {
   const { user, profile } = useAuth();
@@ -130,9 +136,47 @@ export default function LogScreen() {
       })
       .select('id')
       .single();
-    if (error) throw error;
+    if (error) {
+      if (error.message?.includes('daily_logs_user_id_fkey') || error.message?.includes('user_id_fkey')) {
+        // Fallback: auto-create user row if it somehow missed being created
+        console.warn('[log] Missing user row, auto-creating before inserting daily log');
+        
+        const { error: profileErr } = await supabase.from('profiles').insert({
+          id: user!.id,
+          name: profile?.name || 'Athlete',
+          calorie_target: profile?.calorie_target || 2000,
+        });
+        if (profileErr && !profileErr.message?.includes('duplicate key')) {
+           console.error('Failed to create profile:', profileErr);
+        }
+
+        const { error: userErr } = await supabase.from('users').insert({
+          id: user!.id,
+          email: user!.email || '',
+          name: profile?.name || 'Athlete',
+          fuel_mode: profile?.fuel_mode || 'balance',
+          calorie_target: profile?.calorie_target || 2000,
+        });
+        if (userErr && !userErr.message?.includes('duplicate key')) {
+           console.error('Failed to create user:', userErr);
+        }
+        
+        const retry = await supabase
+          .from('daily_logs')
+          .insert({
+            user_id: user!.id,
+            date: todayStr,
+            total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0,
+          })
+          .select('id')
+          .single();
+        if (retry.error) throw retry.error;
+        return retry.data.id;
+      }
+      throw error;
+    }
     return data.id;
-  }, [user?.id, todayStr]);
+  }, [user?.id, user?.email, profile?.name, profile?.fuel_mode, profile?.calorie_target, todayStr]);
 
   const recalculateAndSaveDailyTotals = async (logId: string) => {
     try {
@@ -223,10 +267,10 @@ export default function LogScreen() {
         daily_log_id: logId,
         name: food.name,
         emoji: food.emoji,
-        calories: food.cal,
-        protein: food.p,
-        carbs: food.c,
-        fat: food.f,
+        calories: Math.round(food.cal),
+        protein: Math.round(food.p),
+        carbs: Math.round(food.c),
+        fat: Math.round(food.f),
         meal_time: getMealType(),
       });
       if (mealErr) throw mealErr;
@@ -238,10 +282,10 @@ export default function LogScreen() {
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
       queryClient.invalidateQueries({ queryKey: ['week-logs'] });
-      router.push('/(tabs)/(home)');
+      router.navigate('/(tabs)/(home)');
     },
     onError: (err) => {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     },
   });
 
@@ -273,10 +317,10 @@ export default function LogScreen() {
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
       queryClient.invalidateQueries({ queryKey: ['week-logs'] });
-      router.push('/(tabs)/(home)');
+      router.navigate('/(tabs)/(home)');
     },
     onError: (err) => {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     },
   });
 
@@ -309,10 +353,10 @@ export default function LogScreen() {
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
       queryClient.invalidateQueries({ queryKey: ['meals'] });
       queryClient.invalidateQueries({ queryKey: ['week-logs'] });
-      router.push('/(tabs)/(home)');
+      router.navigate('/(tabs)/(home)');
     },
     onError: (err) => {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     },
   });
 
@@ -328,7 +372,7 @@ export default function LogScreen() {
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      Alert.alert('Not Supported', 'Speech recognition is not supported on this browser. Please type your entry instead.');
+      showAlert('Not Supported', 'Speech recognition is not supported on this browser. Please type your entry instead.');
       return;
     }
 
@@ -367,7 +411,7 @@ export default function LogScreen() {
   // ── Voice description macro estimator ──────────────────────────────────────
   const handleVoiceEstimate = async () => {
     if (!voiceText.trim()) {
-      Alert.alert('Empty input', 'Please type or speak what you ate.');
+      showAlert('Empty input', 'Please type or speak what you ate.');
       return;
     }
 
@@ -398,7 +442,7 @@ export default function LogScreen() {
       });
       setShowResultsModal(true);
     } catch (err: any) {
-      Alert.alert('AI Estimation Failed', err.message || 'Failed to estimate macros. Please try again.');
+      showAlert('AI Estimation Failed', err.message || 'Failed to estimate macros. Please try again.');
     } finally {
       setIsAiEstimating(false);
     }

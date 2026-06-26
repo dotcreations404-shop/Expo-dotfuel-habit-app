@@ -8,25 +8,54 @@ async function loadVol3Participants() {
   if (!tbody) return;
 
   try {
-    // Fetch users first for name mapping if not already loaded
-    if (!usersData || usersData.length === 0) {
-      const { data: ud } = await sb.from('admin_user_view').select('*');
-      if (ud) usersData = ud;
+    console.log('loadVol3Participants: Loading users for name mapping...');
+    
+    // Fetch users first for name mapping if not already loaded on window
+    if (!window.usersData || window.usersData.length === 0) {
+      console.log('loadVol3Participants: Fetching users from admin_user_view...');
+      const { data: ud, error: udErr } = await sb.from('admin_user_view').select('*');
+      if (udErr) {
+        console.error('loadVol3Participants: Error fetching admin_user_view:', udErr);
+        throw udErr;
+      }
+      window.usersData = ud || [];
+      console.log('loadVol3Participants: Successfully fetched users count:', window.usersData.length);
+    } else {
+      console.log('loadVol3Participants: Using cached window.usersData count:', window.usersData.length);
     }
     
-    usersData.forEach(u => {
+    // Rebuild vol3UsersMap
+    vol3UsersMap = {};
+    window.usersData.forEach(u => {
       vol3UsersMap[u.id] = u;
     });
 
+    console.log('loadVol3Participants: Fetching vol3 participants...');
     const { data, error } = await sb
       .from('challenge_vol3_participants')
       .select('*')
       .order('joined_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('loadVol3Participants: Error fetching challenge_vol3_participants:', error);
+      throw error;
+    }
+    
     vol3ParticipantsData = data || [];
+    console.log('loadVol3Participants: Loaded participants count:', vol3ParticipantsData.length);
+
+    if (vol3ParticipantsData.length > 0) {
+      const p0 = vol3ParticipantsData[0];
+      const u0 = vol3UsersMap[p0.user_id];
+      console.log('loadVol3Participants: Sample participant name mapping check:', {
+        user_id: p0.user_id,
+        mapped_user_data: u0 ? { id: u0.id, name: u0.name, email: u0.email } : 'NOT FOUND IN MAP'
+      });
+    }
+
     renderVol3Table();
   } catch (err) {
+    console.error('loadVol3Participants error:', err);
     tbody.innerHTML = `<tr class="empty-row"><td colspan="6" style="color:var(--red)">Error: ${err.message}</td></tr>`;
   }
 }
@@ -40,7 +69,7 @@ function renderVol3Table() {
 
   let filtered = vol3ParticipantsData.filter(p => {
     const userMeta = vol3UsersMap[p.user_id] || {};
-    const name = (userMeta.full_name || userMeta.email || 'Unknown User').toLowerCase();
+    const name = (userMeta.name || userMeta.full_name || userMeta.email || 'Unknown User').toLowerCase();
     
     let matchSearch = name.includes(searchStr) || p.user_id.toLowerCase().includes(searchStr);
     let matchFilter = true;
@@ -63,7 +92,7 @@ function renderVol3Table() {
 
   tbody.innerHTML = filtered.map(p => {
     const userMeta = vol3UsersMap[p.user_id] || {};
-    const name = userMeta.full_name || userMeta.email || 'Unknown User';
+    const name = userMeta.name || userMeta.full_name || userMeta.email || 'Unknown User';
     const email = userMeta.email || '';
     
     let statusBadge = '';
@@ -172,7 +201,22 @@ async function sendVol3Broadcast() {
     const { data: result, error } = await sb.functions.invoke('send-push', {
       body: { audience: 'all_vol3_active', title, message: body }
     });
-    if (error) throw error;
+    if (error) {
+      console.error('send-push error object:', error);
+      let details = error.message;
+      if (error.context) {
+        try {
+          const errBody = await error.context.json();
+          details += ' | ' + JSON.stringify(errBody);
+        } catch (e) {
+          try {
+            const errText = await error.context.text();
+            details += ' | ' + errText;
+          } catch (e2) {}
+        }
+      }
+      throw new Error(details);
+    }
     if (result && result.error) throw new Error(result.error);
     showToast('✓ Broadcast sent successfully');
   } catch (err) {
@@ -195,7 +239,22 @@ async function sendVol3DirectPush() {
     const { data: result, error } = await sb.functions.invoke('send-push', {
       body: { userId, title, message: body }
     });
-    if (error) throw error;
+    if (error) {
+      console.error('send-push direct error object:', error);
+      let details = error.message;
+      if (error.context) {
+        try {
+          const errBody = await error.context.json();
+          details += ' | ' + JSON.stringify(errBody);
+        } catch (e) {
+          try {
+            const errText = await error.context.text();
+            details += ' | ' + errText;
+          } catch (e2) {}
+        }
+      }
+      throw new Error(details);
+    }
     if (result && result.error) throw new Error(result.error);
     showToast('✓ Direct push sent');
     closeVol3EditModal();

@@ -2,7 +2,7 @@
  * Meal item card — shows a logged meal with emoji, name, time, and calories.
  */
 import { useState } from 'react';
-import { View, Pressable, Alert } from 'react-native';
+import { View, Pressable, Alert, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -24,13 +24,20 @@ export function MealItem({ meal, onEdit, onDelete }: MealItemProps) {
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Meal', `Remove "${meal.name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: () => onDelete?.(meal.id),
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      const confirmDelete = window.confirm(`Remove "${meal.name}"?`);
+      if (confirmDelete) {
+        onDelete?.(meal.id);
+      }
+    } else {
+      Alert.alert('Delete Meal', `Remove "${meal.name}"?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: () => onDelete?.(meal.id),
+        },
+      ]);
+    }
   };
 
   const timeStr = meal.created_at

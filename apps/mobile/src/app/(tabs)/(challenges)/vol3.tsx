@@ -19,6 +19,69 @@ import { supabase } from '@/lib/supabase';
 import type { Vol3Participant, Vol3DailyProgress, Vol3ChatMessage, UserProfile } from '@/lib/types';
 import * as Haptics from 'expo-haptics';
 
+interface WebFriendlyModalProps {
+  visible: boolean;
+  onRequestClose: () => void;
+  children: React.ReactNode;
+}
+
+function WebFriendlyModal({ visible, onRequestClose, children }: WebFriendlyModalProps) {
+  if (!visible) return null;
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{
+        // @ts-ignore
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'flex-end',
+        zIndex: 99999,
+        display: 'flex',
+      }}>
+        <Pressable 
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          onPress={onRequestClose}
+        />
+        <View style={{
+          backgroundColor: DotFuelColors.card,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+          width: '100%',
+          maxWidth: 500,
+          alignSelf: 'center',
+          marginTop: 'auto',
+          zIndex: 100000,
+        }}>
+          {children}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onRequestClose}
+    >
+      <View style={{
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'flex-end'
+      }}>
+        <View style={{
+          backgroundColor: DotFuelColors.card,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderWidth: 1, borderColor: DotFuelColors.cardBorder
+        }}>
+          {children}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const PulsingTodayDot = ({ completed, onPress }: { completed: boolean; onPress: () => void }) => {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(0.7);
@@ -224,8 +287,8 @@ export default function Vol3ChallengeScreen() {
       if (parts && parts.length > 0) {
         const ids = parts.map(p => p.user_id);
         const [usersRes, profilesRes, allProgressRes] = await Promise.all([
-          supabase.from('users').select('id, name').in('id', ids),
-          supabase.from('profiles').select('id, name').in('id', ids),
+          supabase.from('users').select('id, name, streak_days').in('id', ids),
+          supabase.from('profiles').select('id, name, streak_days').in('id', ids),
           supabase.from('challenge_vol3_daily_progress')
             .select('user_id, log_date, is_calculated_success, revival_applied, clean_meals, workout, read_page, water_synced_override, custom_task_done')
             .in('user_id', ids)
@@ -271,8 +334,10 @@ export default function Vol3ChallengeScreen() {
         const leaderboardData = ids.map(id => {
           const u = userMap.get(id);
           const p = profileMap.get(id);
-          const name = u?.name?.trim() || p?.name?.trim() || 'Athlete';
-          const streak_days = computeStreak(progressByUser.get(id) || []);
+          const name = (id === user.id ? (profile?.name || u?.name || p?.name) : (u?.name || p?.name))?.trim() || 'Athlete';
+          const calculatedStreak = computeStreak(progressByUser.get(id) || []);
+          const dbStreak = u?.streak_days ?? p?.streak_days ?? 0;
+          const streak_days = id === user.id ? calculatedStreak : dbStreak;
           return {
             id,
             name,
@@ -283,9 +348,12 @@ export default function Vol3ChallengeScreen() {
         const sorted = leaderboardData.sort((a, b) => b.streak_days - a.streak_days);
         setLeaderboard(sorted);
 
-        // Also sync current user's streak_days to users table
+        // Also sync current user's streak_days to both users and profiles tables
         const myStreak = sorted.find(s => s.id === user.id)?.streak_days ?? 0;
-        supabase.from('users').update({ streak_days: myStreak }).eq('id', user.id).then(() => {});
+        Promise.all([
+          supabase.from('users').update({ streak_days: myStreak }).eq('id', user.id),
+          supabase.from('profiles').update({ streak_days: myStreak }).eq('id', user.id),
+        ]).then(() => {});
       }
 
       // Fetch Chat Messages
@@ -1007,25 +1075,13 @@ export default function Vol3ChallengeScreen() {
       </ScrollView>
     </KeyboardAvoidingView>
       {/* ── DAY INSPECTOR MODAL ── */}
-      <Modal
+      <WebFriendlyModal
         visible={inspectorVisible}
-        transparent
-        animationType="slide"
         onRequestClose={() => setInspectorVisible(false)}
       >
         <View style={{
-          flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.85)',
-          justifyContent: 'flex-end',
+          padding: 24,
         }}>
-          <View style={{
-            backgroundColor: DotFuelColors.card,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            padding: 24,
-            borderWidth: 1,
-            borderColor: DotFuelColors.cardBorder,
-          }}>
             {/* Grab handle */}
             <View style={{
               width: 40,
@@ -1178,8 +1234,7 @@ export default function Vol3ChallengeScreen() {
               );
             })()}
           </View>
-        </View>
-      </Modal>
+      </WebFriendlyModal>
     </SafeAreaView>
   );
 }

@@ -541,6 +541,122 @@
   </div>
 </div>
 
+<!-- ═══ DAILY LOGS & CHALLENGE PROGRESS MODAL ═══ -->
+<div id="modal-daily-logs" class="modal-overlay">
+  <div class="modal" style="width:620px; max-width:95vw">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+      <div class="modal-title">User Daily Logs</div>
+      <button class="modal-close" onclick="closeDailyLogsModal()" style="background:none; border:none; color:var(--muted); font-size:24px; cursor:pointer; font-weight:700">×</button>
+    </div>
+    <div class="modal-sub" id="daily-logs-user-title" style="margin-bottom:16px">Viewing logs for user</div>
+    <input type="hidden" id="daily-logs-userid">
+
+    <div style="display:flex; gap:12px; margin-bottom:20px; align-items:center; background:var(--surface); padding:12px; border-radius:12px; border:1px solid var(--border)">
+      <label style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); flex-shrink:0">Select Date:</label>
+      <input type="date" id="daily-logs-date" style="background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 12px; color:#fff; font-size:13px; outline:none; font-family:inherit" onchange="loadDailyLogForDate()">
+      <button onclick="loadDefaultTodayLog()" style="background:rgba(255,255,255,0.06); border:none; color:#fff; padding:8px 14px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; text-transform:uppercase; font-family:inherit">Today</button>
+    </div>
+
+    <div id="daily-logs-editor-content">
+      <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:20px">
+        <!-- Nutrition & Steps Column -->
+        <div>
+          <div style="font-size:11px; font-weight:800; color:var(--lime); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px">Nutrition & Steps</div>
+          
+          <div class="field-row" style="margin-bottom:10px">
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Calories (kcal)</label>
+              <input type="number" id="dl-calories" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Steps Count</label>
+              <input type="number" id="dl-steps" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+          </div>
+
+          <div class="field-row-3" style="margin-bottom:10px">
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Protein (g)</label>
+              <input type="number" id="dl-protein" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Carbs (g)</label>
+              <input type="number" id="dl-carbs" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Fat (g)</label>
+              <input type="number" id="dl-fat" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+          </div>
+
+          <div class="field-row" style="margin-bottom:10px">
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Water (ml)</label>
+              <input type="number" id="dl-water" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+            <div class="field-group" style="margin-bottom:0">
+              <label class="field-label" style="font-size:9px; margin-bottom:4px">Fuel Score</label>
+              <input type="number" id="dl-score" class="field-input" style="padding:8px 12px; font-size:13px" placeholder="0">
+            </div>
+          </div>
+
+          <div class="field-group" style="margin-bottom:10px">
+            <label class="field-label" style="font-size:9px; margin-bottom:4px">Fuel Coach Tip</label>
+            <textarea id="dl-tip" rows="2" class="field-input" style="padding:8px 12px; font-size:13px; resize:none" placeholder="Tips from coach..."></textarea>
+          </div>
+        </div>
+
+        <!-- Vol3 Challenge Column -->
+        <div>
+          <div style="font-size:11px; font-weight:800; color:var(--lime); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px">Vol 3 Challenge</div>
+
+          <div style="display:flex; flex-direction:column; gap:8px">
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-clean-meals" style="cursor:pointer; width:16px; height:16px">
+              <span>Clean Meals (x4)</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-workout" style="cursor:pointer; width:16px; height:16px">
+              <span>Workout Done</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-read-page" style="cursor:pointer; width:16px; height:16px">
+              <span>Read 10 Pages</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-water-synced" style="cursor:pointer; width:16px; height:16px">
+              <span>Water Goal Hit</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-custom-task" style="cursor:pointer; width:16px; height:16px">
+              <span>Custom Task Done</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-revival-applied" style="cursor:pointer; width:16px; height:16px">
+              <span style="color:var(--orange)">Revival Applied</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); font-size:12px; cursor:pointer; color:#fff">
+              <input type="checkbox" id="vp-calculated-success" style="cursor:pointer; width:16px; height:16px">
+              <span style="color:var(--green)">Calculated Success</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="modal-cancel" onclick="closeDailyLogsModal()" style="padding:10px 20px; font-size:13px">Close</button>
+      <button class="modal-save" onclick="saveDailyLogData()" style="padding:10px 20px; font-size:13px" id="dl-save-btn">Save Log Changes</button>
+    </div>
+  </div>
+</div>
+
 
 </body>
 </html>

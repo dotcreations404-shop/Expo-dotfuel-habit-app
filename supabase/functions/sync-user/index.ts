@@ -111,13 +111,14 @@ serve(async (req) => {
       });
     }
     
-    // 3. Update users table
-    const { error: updateErr } = await supabase
-      .from('users')
-      .update({ streak_days: streakCount })
-      .eq('id', userId);
+    // 3. Update users and profiles tables
+    const [updateUserRes, updateProfileRes] = await Promise.all([
+      supabase.from('users').update({ streak_days: streakCount }).eq('id', userId),
+      supabase.from('profiles').update({ streak_days: streakCount }).eq('id', userId),
+    ]);
       
-    if (updateErr) throw updateErr;
+    if (updateUserRes.error) throw updateUserRes.error;
+    if (updateProfileRes.error) throw updateProfileRes.error;
 
     return new Response(JSON.stringify({ success: true, streak_days: streakCount }), {
       status: 200,

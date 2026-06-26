@@ -163,8 +163,40 @@ export default function SearchResultsScreen() {
         const { data, error } = await supabase.from('daily_logs')
           .insert({ user_id: user!.id, date: todayStr, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 })
           .select('id').single();
-        if (error) throw error;
-        logId = data.id;
+        if (error) {
+          if (error.message?.includes('daily_logs_user_id_fkey') || error.message?.includes('user_id_fkey')) {
+            console.warn('[search] Missing user row, auto-creating before inserting daily log');
+            
+            const { error: profileErr } = await supabase.from('profiles').insert({
+              id: user!.id,
+              name: 'Athlete',
+              calorie_target: 2000,
+            });
+            if (profileErr && !profileErr.message?.includes('duplicate key')) {
+               console.error('Failed to create profile:', profileErr);
+            }
+
+            const { error: userErr } = await supabase.from('users').insert({
+              id: user!.id,
+              email: user!.email || '',
+              name: 'Athlete',
+              fuel_mode: 'balance',
+              calorie_target: 2000,
+            });
+            if (userErr && !userErr.message?.includes('duplicate key')) {
+               console.error('Failed to create user:', userErr);
+            }
+            const retry = await supabase.from('daily_logs')
+              .insert({ user_id: user!.id, date: todayStr, total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0 })
+              .select('id').single();
+            if (retry.error) throw retry.error;
+            logId = retry.data.id;
+          } else {
+            throw error;
+          }
+        } else {
+          logId = data.id;
+        }
       }
 
       // Insert meal

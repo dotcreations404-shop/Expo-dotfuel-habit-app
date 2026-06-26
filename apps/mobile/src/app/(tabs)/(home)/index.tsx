@@ -6,7 +6,7 @@
  *   - Calorie summary, macro bars, week dots, water, meals
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, ScrollView, RefreshControl, Pressable, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
+import { View, ScrollView, RefreshControl, Pressable, TextInput, Alert, Modal, ActivityIndicator, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -25,6 +25,77 @@ import { WeekDots } from '@/components/week-dots';
 import { MealItem } from '@/components/meal-item';
 import { WaterCard } from '@/components/water-card';
 import { SpringPressable } from '@/components/ui/spring-pressable';
+
+const showAlert = (title: string, message: string) => {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}: ${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
+interface WebFriendlyModalProps {
+  visible: boolean;
+  onRequestClose: () => void;
+  children: React.ReactNode;
+}
+
+function WebFriendlyModal({ visible, onRequestClose, children }: WebFriendlyModalProps) {
+  if (!visible) return null;
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={{
+        // @ts-ignore
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'flex-end',
+        zIndex: 99999,
+        display: 'flex',
+      }}>
+        <Pressable 
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          onPress={onRequestClose}
+        />
+        <View style={{
+          backgroundColor: DotFuelColors.card,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderWidth: 1, borderColor: DotFuelColors.cardBorder,
+          width: '100%',
+          maxWidth: 500,
+          alignSelf: 'center',
+          marginTop: 'auto',
+          zIndex: 100000,
+        }}>
+          {children}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onRequestClose}
+    >
+      <View style={{
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+        justifyContent: 'flex-end'
+      }}>
+        <View style={{
+          backgroundColor: DotFuelColors.card,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderWidth: 1, borderColor: DotFuelColors.cardBorder
+        }}>
+          {children}
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 /** Returns YYYY-MM-DD in local timezone. */
 function today(): string {
@@ -66,6 +137,27 @@ export default function HomeScreen() {
 
   // ── Historical inspector details state ────────────────────────────────────
   const [selectedDateDetails, setSelectedDateDetails] = useState<string | null>(null);
+
+  // ── Edit Meal State ────────────────────────────────────────────────────────
+  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
+  const [editMealName, setEditMealName] = useState('');
+  const [editMealCals, setEditMealCals] = useState('');
+  const [editMealProtein, setEditMealProtein] = useState('');
+  const [editMealCarbs, setEditMealCarbs] = useState('');
+  const [editMealFat, setEditMealFat] = useState('');
+  const [editMealEmoji, setEditMealEmoji] = useState('🍽️');
+  const [editMealTime, setEditMealTime] = useState('breakfast');
+
+  const startEditingMeal = (meal: Meal) => {
+    setEditingMeal(meal);
+    setEditMealName(meal.name || '');
+    setEditMealCals(String(meal.calories ?? ''));
+    setEditMealProtein(String(meal.protein ?? ''));
+    setEditMealCarbs(String(meal.carbs ?? ''));
+    setEditMealFat(String(meal.fat ?? ''));
+    setEditMealEmoji(meal.emoji || '🍽️');
+    setEditMealTime(meal.meal_time || 'breakfast');
+  };
 
   const { data: detailsData, isLoading: loadingDetails } = useQuery({
     queryKey: ['date-details', user?.id, selectedDateDetails],
@@ -122,7 +214,7 @@ export default function HomeScreen() {
       }
     },
     onError: (err) => {
-      Alert.alert('Error updating goal', err.message);
+      showAlert('Error updating goal', err.message);
     }
   });
 
@@ -398,8 +490,46 @@ export default function HomeScreen() {
           })
           .select()
           .single();
-        if (error) throw error;
-        logId = data.id;
+        if (error) {
+          if (error.message?.includes('daily_logs_user_id_fkey') || error.message?.includes('user_id_fkey')) {
+            console.warn('[home] Missing user row, auto-creating before inserting daily log');
+
+            const { error: profileErr } = await supabase.from('profiles').insert({
+              id: user!.id,
+              name: 'Athlete',
+              calorie_target: 2000,
+            });
+            if (profileErr && !profileErr.message?.includes('duplicate key')) {
+               console.error('Failed to create profile:', profileErr);
+            }
+
+            const { error: userErr } = await supabase.from('users').insert({
+              id: user!.id,
+              email: user!.email || '',
+              name: 'Athlete',
+              fuel_mode: 'balance',
+              calorie_target: 2000,
+            });
+            if (userErr && !userErr.message?.includes('duplicate key')) {
+               console.error('Failed to create user:', userErr);
+            }
+            const retry = await supabase
+              .from('daily_logs')
+              .insert({
+                user_id: user!.id,
+                date: todayStr,
+                total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0,
+              })
+              .select()
+              .single();
+            if (retry.error) throw retry.error;
+            logId = retry.data.id;
+          } else {
+            throw error;
+          }
+        } else {
+          logId = data.id;
+        }
       }
 
       const p = parseInt(quickMealProtein, 10) || 0;
@@ -434,7 +564,7 @@ export default function HomeScreen() {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (err) => {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     }
   });
 
@@ -487,7 +617,7 @@ export default function HomeScreen() {
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
     onError: (err) => {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     }
   });
 
@@ -529,14 +659,14 @@ export default function HomeScreen() {
           setShowStravaList(true);
           if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
-          Alert.alert('Strava Sync', 'No recent activities found.');
+          showAlert('Strava Sync', 'No recent activities found.');
         }
       } else {
-        Alert.alert('Sync Failed', 'Could not fetch from Strava.');
+        showAlert('Sync Failed', 'Could not fetch from Strava.');
       }
     } catch (err) {
       console.warn(err);
-      Alert.alert('Error', 'Strava connection failed.');
+      showAlert('Error', 'Strava connection failed.');
     } finally {
       setStravaSyncing(false);
     }
@@ -582,9 +712,9 @@ export default function HomeScreen() {
       await recalculateAndSaveDailyTotals(logId!);
       setStravaActivities(prev => prev.filter(a => a.id !== act.id));
       if (process.env.EXPO_OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Logged', `${act.name} has been copied to your activities!`);
+      showAlert('Logged', `${act.name} has been copied to your activities!`);
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      showAlert('Error', err.message);
     }
   };
 
@@ -601,6 +731,47 @@ export default function HomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['meals'] });
       queryClient.invalidateQueries({ queryKey: ['daily-log'] });
     },
+  });
+
+  // ── Update meal ────────────────────────────────────────────────────────────
+  const updateMealMutation = useMutation({
+    mutationFn: async (updated: {
+      id: string;
+      name: string;
+      calories: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+      emoji: string;
+      meal_time: string;
+    }) => {
+      const { error } = await supabase
+        .from('meals')
+        .update({
+          name: updated.name,
+          calories: updated.calories,
+          protein: updated.protein,
+          carbs: updated.carbs,
+          fat: updated.fat,
+          emoji: updated.emoji,
+          meal_time: updated.meal_time,
+        })
+        .eq('id', updated.id);
+
+      if (error) throw error;
+
+      if (dailyLog?.id) {
+        await recalculateAndSaveDailyTotals(dailyLog.id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meals'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-log'] });
+      setEditingMeal(null);
+    },
+    onError: (err) => {
+      showAlert('Error', err.message);
+    }
   });
 
   // ── Delete activity ────────────────────────────────────────────────────────
@@ -1074,6 +1245,7 @@ export default function HomeScreen() {
                 <MealItem
                   key={meal.id}
                   meal={meal}
+                  onEdit={startEditingMeal}
                   onDelete={(id) => deleteMealMutation.mutate(id)}
                 />
               ))}
@@ -1118,22 +1290,13 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* ── ACTIVITY LOG MODAL (MANUAL ENTRY) ── */}
-      <Modal
+      <WebFriendlyModal
         visible={showActivityModal}
-        transparent
-        animationType="slide"
         onRequestClose={() => setShowActivityModal(false)}
       >
         <View style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
-          justifyContent: 'flex-end'
+          padding: 24, gap: 16
         }}>
-          <View style={{
-            backgroundColor: DotFuelColors.card,
-            borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            padding: 24, gap: 16,
-            borderWidth: 1, borderColor: DotFuelColors.cardBorder
-          }}>
             {/* Grab handle */}
             <View style={{ width: 40, height: 4, backgroundColor: DotFuelColors.surface, borderRadius: 2, alignSelf: 'center', marginBottom: 4 }} />
 
@@ -1244,28 +1407,18 @@ export default function HomeScreen() {
                 {logActivityMutation.isPending ? 'LOGGING...' : 'LOG ACTIVITY →'}
               </Text>
             </Pressable>
-          </View>
         </View>
-      </Modal>
+      </WebFriendlyModal>
 
       {/* ── HISTORICAL CALENDAR INSPECTOR MODAL ── */}
-      <Modal
+      <WebFriendlyModal
         visible={!!selectedDateDetails}
-        transparent
-        animationType="slide"
         onRequestClose={() => setSelectedDateDetails(null)}
       >
         <View style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
-          justifyContent: 'flex-end'
+          padding: 24, gap: 16,
+          maxHeight: (Platform.OS === 'web' ? '85vh' : '85%') as any
         }}>
-          <View style={{
-            backgroundColor: DotFuelColors.card,
-            borderTopLeftRadius: 24, borderTopRightRadius: 24,
-            padding: 24, gap: 16,
-            borderWidth: 1, borderColor: DotFuelColors.cardBorder,
-            maxHeight: '85%'
-          }}>
             {/* Grab handle */}
             <View style={{ width: 40, height: 4, backgroundColor: DotFuelColors.surface, borderRadius: 2, alignSelf: 'center', marginBottom: 4 }} />
 
@@ -1370,9 +1523,161 @@ export default function HomeScreen() {
             ) : (
               <Text style={{ fontSize: 13, color: DotFuelColors.muted, textAlign: 'center', paddingVertical: 40 }}>No logs found for this date.</Text>
             )}
-          </View>
         </View>
-      </Modal>
+      </WebFriendlyModal>
+
+      {/* ── EDIT MEAL MODAL ── */}
+      <WebFriendlyModal
+        visible={!!editingMeal}
+        onRequestClose={() => setEditingMeal(null)}
+      >
+        <View style={{
+          padding: 24, gap: 16,
+          paddingBottom: 40
+        }}>
+            {/* Grab handle */}
+            <View style={{ width: 40, height: 4, backgroundColor: DotFuelColors.surface, borderRadius: 2, alignSelf: 'center', marginBottom: 4 }} />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontFamily: 'Inter', fontSize: 18, fontWeight: '900', color: DotFuelColors.white }}>📝 Edit Meal</Text>
+              <Pressable onPress={() => setEditingMeal(null)}>
+                <Text style={{ fontSize: 20, color: DotFuelColors.muted, fontWeight: 'bold' }}>✕</Text>
+              </Pressable>
+            </View>
+
+            <View style={{ gap: 12 }}>
+              {/* Name & Emoji */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput
+                  value={editMealEmoji}
+                  onChangeText={setEditMealEmoji}
+                  style={{
+                    backgroundColor: DotFuelColors.surface, color: DotFuelColors.white,
+                    borderRadius: 10, padding: 12, fontSize: 20, width: 52, textAlign: 'center',
+                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
+                  }}
+                />
+                <TextInput
+                  value={editMealName}
+                  onChangeText={setEditMealName}
+                  placeholder="Meal Name"
+                  placeholderTextColor={DotFuelColors.muted}
+                  style={{
+                    flex: 1, backgroundColor: DotFuelColors.surface, color: DotFuelColors.white,
+                    borderRadius: 10, padding: 12, fontSize: 14,
+                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
+                  }}
+                />
+              </View>
+
+              {/* Meal Type selection */}
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: DotFuelColors.muted, textTransform: 'uppercase' }}>Meal Type</Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {[
+                    { id: 'breakfast', label: 'Breakfast 🥞' },
+                    { id: 'lunch', label: 'Lunch 🥪' },
+                    { id: 'dinner', label: 'Dinner 🍲' },
+                    { id: 'snack', label: 'Snack 🍎' }
+                  ].map((type) => {
+                    const isSelected = editMealTime === type.id;
+                    return (
+                      <Pressable
+                        key={type.id}
+                        onPress={() => {
+                          if (process.env.EXPO_OS === 'ios') Haptics.selectionAsync();
+                          setEditMealTime(type.id);
+                        }}
+                        style={{
+                          flex: 1,
+                          backgroundColor: isSelected ? DotFuelColors.limeLight : DotFuelColors.surface,
+                          borderWidth: 1, borderColor: isSelected ? DotFuelColors.lime : 'rgba(255,255,255,0.05)',
+                          borderRadius: Radius.md, paddingVertical: 10, alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{
+                          fontFamily: 'Inter', fontSize: 11, fontWeight: '800',
+                          color: isSelected ? DotFuelColors.lime : DotFuelColors.muted,
+                          textTransform: 'uppercase',
+                        }}>
+                          {type.label.split(' ')[0]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Calories */}
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: DotFuelColors.muted, textTransform: 'uppercase' }}>Calories (kcal)</Text>
+                <TextInput
+                  value={editMealCals}
+                  onChangeText={setEditMealCals}
+                  keyboardType="numeric"
+                  style={{
+                    backgroundColor: DotFuelColors.surface, color: DotFuelColors.lime,
+                    borderRadius: 12, padding: 14, fontSize: 16, fontWeight: '900',
+                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
+                  }}
+                />
+              </View>
+
+              {/* Macros */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[
+                  { label: 'Protein (g)', val: editMealProtein, set: setEditMealProtein },
+                  { label: 'Carbs (g)', val: editMealCarbs, set: setEditMealCarbs },
+                  { label: 'Fat (g)', val: editMealFat, set: setEditMealFat }
+                ].map((input) => (
+                  <View key={input.label} style={{ flex: 1 }}>
+                    <TextInput
+                      value={input.val}
+                      onChangeText={input.set}
+                      keyboardType="numeric"
+                      style={{
+                        backgroundColor: DotFuelColors.surface, color: DotFuelColors.white,
+                        borderRadius: 8, padding: 10, fontSize: 14, fontWeight: '700',
+                        textAlign: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)'
+                      }}
+                    />
+                    <Text style={{ fontSize: 9, color: DotFuelColors.muted, fontWeight: '700', textAlign: 'center', marginTop: 4 }}>{input.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => {
+                const cals = parseInt(editMealCals, 10);
+                if (isNaN(cals) || cals <= 0) {
+                  showAlert('Error', 'Please enter valid calories');
+                  return;
+                }
+                updateMealMutation.mutate({
+                  id: editingMeal!.id,
+                  name: editMealName.trim() || 'Logged Meal',
+                  calories: cals,
+                  protein: parseInt(editMealProtein, 10) || 0,
+                  carbs: parseInt(editMealCarbs, 10) || 0,
+                  fat: parseInt(editMealFat, 10) || 0,
+                  emoji: editMealEmoji.trim() || '🍽️',
+                  meal_time: editMealTime
+                });
+              }}
+              disabled={updateMealMutation.isPending}
+              style={({ pressed }) => ({
+                backgroundColor: DotFuelColors.lime, borderRadius: 14,
+                paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+                opacity: pressed ? 0.85 : 1, marginTop: 8
+              })}
+            >
+              <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '900', color: DotFuelColors.black }}>
+                {updateMealMutation.isPending ? 'SAVING...' : 'SAVE CHANGES →'}
+              </Text>
+            </Pressable>
+        </View>
+      </WebFriendlyModal>
     </SafeAreaView>
   );
 }

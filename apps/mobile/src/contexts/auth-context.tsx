@@ -18,7 +18,7 @@ import React, { createContext, useCallback, useEffect, useMemo, useRef, useState
 import { Alert, Platform } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { mapUsersDbToAppMode, mapProfilesDbToAppMode } from '@/lib/types';
+import { mapUsersDbToAppMode, mapProfilesDbToAppMode, mapAppToUsersDbMode } from '@/lib/types';
 import type { UserProfile } from '@/lib/types';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
@@ -104,8 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialSessionDone = useRef(false);
 
   // ── Fetch profile from DB ─────────────────────────────────────────────────
-  const fetchProfile = useCallback(async (userId: string): Promise<void> => {
+  const fetchProfile = useCallback(async (authUser: User): Promise<void> => {
     try {
+      const userId = authUser.id;
       const [userResult, profileResult] = await Promise.all([
         supabase.from('users').select('*').eq('id', userId).maybeSingle(),
         supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
@@ -118,8 +119,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('[auth] Profiles fetch error:', profileResult.error.message);
       }
 
-      const userData = userResult.data;
+      let userData = userResult.data;
       const profileData = profileResult.data;
+
+      // Auto-heal missing users table row
+      if (!userData) {
+        console.log('[auth] Users row missing for user ID:', userId, '- auto-creating...');
+        const appMode = mapProfilesDbToAppMode(profileData?.fuel_mode) || 'balance';
+        const usersDbMode = mapAppToUsersDbMode(appMode);
+
+        const { data: newUserData, error: insertUserErr } = await supabase
+          .from('users')
+          .insert({
+            id: userId,
+            email: profileData?.email || authUser.email || '',
+            name: profileData?.name || 'Athlete',
+            fuel_mode: usersDbMode,
+            calorie_target: profileData?.calorie_target || 2000,
+            protein_target: profileData?.protein_target || 150,
+            carbs_target: profileData?.carbs_target || 200,
+            fat_target: profileData?.fat_target || 70,
+            water_goal_ml: profileData?.water_goal_ml || (profileData?.water_goal_l ? Math.round(profileData.water_goal_l * 1000) : 3000),
+            streak_days: profileData?.streak_days || 0,
+            best_streak: profileData?.best_streak || 0,
+            total_logged_days: profileData?.total_logged_days || 0,
+          })
+          .select()
+          .maybeSingle();
+
+        if (insertUserErr) {
+          console.warn('[auth] Failed to auto-create users row:', insertUserErr.message);
+        } else if (newUserData) {
+          console.log('[auth] Users row auto-created successfully!');
+          userData = newUserData;
+        }
+      }
 
       if (userData || profileData) {
         const merged: UserProfile = {
@@ -294,8 +328,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // On web with detectSessionInUrl=true, this may already include
           // the session from a PKCE code exchange.
           setSession(s);
-          if (s?.user?.id) {
-            await fetchProfile(s.user.id);
+          if (s?.user) {
+            await fetchProfile(s.user);
           }
           // Mark INITIAL_SESSION as done — but only resolve loading if
           // there's no pending URL auth in progress.
@@ -305,8 +339,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else if (event === 'SIGNED_IN') {
           // Fired after a successful sign-in (including PKCE exchange).
           setSession(s);
-          if (s?.user?.id) {
-            await fetchProfile(s.user.id);
+          if (s?.user) {
+            await fetchProfile(s.user);
           }
           // SIGNED_IN always resolves loading regardless of other state.
           initialSessionDone.current = true;
@@ -453,9 +487,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /** Re-fetch profile from DB. Use after settings updates. */
   const refreshProfile = useCallback(async () => {
-    const userId = session?.user?.id;
-    if (userId) await fetchProfile(userId);
-  }, [session?.user?.id, fetchProfile]);
+    const authUser = session?.user;
+    if (authUser) await fetchProfile(authUser);
+  }, [session?.user, fetchProfile]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const needsOnboarding = !loading && !!session && (!profile || !profile.calorie_target);
