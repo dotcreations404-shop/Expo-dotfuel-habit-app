@@ -531,6 +531,80 @@ export default function Vol3ChallengeScreen() {
     }
   };
 
+  const toggleTaskForDate = async (dateStr: string, key: 'cleanMeals' | 'workout' | 'read' | 'water' | 'custom') => {
+    if (!user || !participant) return;
+    if (process.env.EXPO_OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const row = progressData[dateStr] || {
+      clean_meals: false, workout: false, read_page: false, water_synced_override: false, custom_task_done: false, revival_applied: false, is_calculated_success: false
+    };
+
+    const mapping = {
+      cleanMeals: 'clean_meals',
+      workout: 'workout',
+      read: 'read_page',
+      water: 'water_synced_override',
+      custom: 'custom_task_done'
+    } as const;
+    const dbKey = mapping[key];
+    
+    const nextVal = !row[dbKey];
+    
+    // Optimistic update
+    setProgressData(prev => ({
+      ...prev,
+      [dateStr]: {
+        ...prev[dateStr],
+        [dbKey]: nextVal,
+        id: prev[dateStr]?.id || ''
+      } as any
+    }));
+
+    // if the date is today, also update tasks state
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (dateStr === todayStr) {
+      setTasks(prev => ({ ...prev, [key]: nextVal }));
+    }
+
+    // calculate compliance
+    const updatedRow = { ...row, [dbKey]: nextVal };
+    let complianceCount = 0;
+    if (updatedRow.clean_meals) complianceCount++;
+    if (updatedRow.workout) complianceCount++;
+    if (updatedRow.read_page) complianceCount++;
+    if (updatedRow.water_synced_override) complianceCount++;
+    if (updatedRow.custom_task_done) complianceCount++;
+    const isCalculatedSuccess = complianceCount >= 4;
+
+    const upsertData = {
+      user_id: user.id,
+      log_date: dateStr,
+      clean_meals: updatedRow.clean_meals,
+      workout: updatedRow.workout,
+      read_page: updatedRow.read_page,
+      water_synced_override: updatedRow.water_synced_override,
+      custom_task_done: updatedRow.custom_task_done,
+      is_calculated_success: isCalculatedSuccess,
+      revival_applied: updatedRow.revival_applied
+    };
+
+    try {
+      const { error } = await supabase
+        .from('challenge_vol3_daily_progress')
+        .upsert(upsertData, { onConflict: 'user_id,log_date' });
+        
+      if (error) {
+         console.log('Error upserting daily progress', error);
+         loadDashboardData();
+      } else {
+         loadDashboardData();
+      }
+    } catch (err) {
+       console.log('Error toggling task for date', err);
+       loadDashboardData();
+    }
+  };
+
   const saveCustomTaskTitle = async () => {
     if (!user || !participant) return;
     try {
@@ -1170,22 +1244,33 @@ export default function Vol3ChallengeScreen() {
                   {/* Checklist Summary */}
                   <View style={{ gap: 10, marginVertical: 8 }}>
                     {[
-                      { label: 'All day clean meals', done: cleanMeals, emoji: '🥗' },
-                      { label: 'Daily workout / 10k steps', done: workout, emoji: '🏋️' },
-                      { label: 'Read a page', done: readPage, emoji: '📖' },
-                      { label: '4 ltrs of water', done: water, emoji: '💧' },
-                      { label: customTaskName || 'Custom daily habit', done: custom, emoji: '✨' },
-                    ].map((item, index) => (
-                      <View key={index} style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        backgroundColor: DotFuelColors.surface,
-                        borderRadius: 12,
-                        padding: 14,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.02)',
-                      }}>
+                      { id: 'cleanMeals', label: 'All day clean meals', done: cleanMeals, emoji: '🥗' },
+                      { id: 'workout', label: 'Daily workout / 10k steps', done: workout, emoji: '🏋️' },
+                      { id: 'read', label: 'Read a page', done: readPage, emoji: '📖' },
+                      { id: 'water', label: '4 ltrs of water', done: water, emoji: '💧' },
+                      { id: 'custom', label: customTaskName || 'Custom daily habit', done: custom, emoji: '✨' },
+                    ].map((item, index) => {
+                      const isEditAllowed = new Date().getTime() < new Date('2026-06-30T21:07:25+05:30').getTime();
+                      const canEdit = isEditAllowed && !isFuture;
+                      
+                      return (
+                      <Pressable 
+                        key={index} 
+                        onPress={() => {
+                          if (canEdit) toggleTaskForDate(selectedDate, item.id as 'cleanMeals' | 'workout' | 'read' | 'water' | 'custom');
+                        }}
+                        style={({ pressed }) => ({
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: DotFuelColors.surface,
+                          borderRadius: 12,
+                          padding: 14,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.02)',
+                          opacity: pressed && canEdit ? 0.7 : 1,
+                        })}
+                      >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <Text style={{ fontSize: 18 }}>{item.emoji}</Text>
                           <Text style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: '600', color: DotFuelColors.white }}>
@@ -1209,8 +1294,8 @@ export default function Vol3ChallengeScreen() {
                             {item.done ? 'Done' : 'Missed'}
                           </Text>
                         </View>
-                      </View>
-                    ))}
+                      </Pressable>
+                    )})}
                   </View>
 
                   {/* Close button */}
