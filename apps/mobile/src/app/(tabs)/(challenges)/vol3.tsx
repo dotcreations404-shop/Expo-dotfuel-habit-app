@@ -554,7 +554,7 @@ export default function Vol3ChallengeScreen() {
     setProgressData(prev => ({
       ...prev,
       [dateStr]: {
-        ...prev[dateStr],
+        ...(prev[dateStr] || row),
         [dbKey]: nextVal,
         id: prev[dateStr]?.id || ''
       } as any
@@ -1250,7 +1250,7 @@ export default function Vol3ChallengeScreen() {
                       { id: 'water', label: '4 ltrs of water', done: water, emoji: '💧' },
                       { id: 'custom', label: customTaskName || 'Custom daily habit', done: custom, emoji: '✨' },
                     ].map((item, index) => {
-                      const isEditAllowed = new Date().getTime() < new Date('2026-06-30T21:07:25+05:30').getTime();
+                      const isEditAllowed = new Date().getTime() < new Date('2026-07-03T00:00:00Z').getTime();
                       const canEdit = isEditAllowed && !isFuture;
                       
                       return (
